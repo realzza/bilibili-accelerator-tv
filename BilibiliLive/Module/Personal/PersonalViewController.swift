@@ -59,9 +59,9 @@ class PersonalViewController: UIViewController, BLTabBarContentVCProtocol {
 
     private let leftCollectionView: UICollectionView = {
         let layout = UICollectionViewFlowLayout()
-        layout.minimumLineSpacing = 16
+        layout.minimumLineSpacing = 6
         layout.minimumInteritemSpacing = 4
-        layout.itemSize = CGSize(width: 460, height: 60)
+        layout.itemSize = CGSize(width: 420, height: 64)
         layout.sectionInset = UIEdgeInsets(top: 0, left: 20, bottom: 0, right: 0)
         let collectionView = UICollectionView(frame: .zero, collectionViewLayout: layout)
         collectionView.translatesAutoresizingMaskIntoConstraints = false

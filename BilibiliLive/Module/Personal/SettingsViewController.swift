@@ -52,29 +52,28 @@ class SettingsViewController: UIViewController {
 
     let collectionView: UICollectionView = {
         let layout = UICollectionViewCompositionalLayout { sectionIndex, environment -> NSCollectionLayoutSection? in
-            let itemSize = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1.0), heightDimension: .absolute(68))
+            let itemSize = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1.0), heightDimension: .absolute(72))
             let item = NSCollectionLayoutItem(layoutSize: itemSize)
-
-            let groupSize = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1.0), heightDimension: .absolute(68))
+            let groupSize = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1.0), heightDimension: .absolute(72))
             let group = NSCollectionLayoutGroup.vertical(layoutSize: groupSize, subitems: [item])
-            group.interItemSpacing = .fixed(10)
 
             let section = NSCollectionLayoutSection(group: group)
-            let headerSize = NSCollectionLayoutSize(
-                widthDimension: .fractionalWidth(1),
-                heightDimension: .estimated(44)
-            )
-
+            section.interGroupSpacing = 4
+            // Rows sit on a rounded card, inset from its edges; the header stays above the card.
+            section.contentInsets = NSDirectionalEdgeInsets(top: 10, leading: 10, bottom: 10, trailing: 10)
             let header = NSCollectionLayoutBoundarySupplementaryItem(
-                layoutSize: headerSize,
+                layoutSize: NSCollectionLayoutSize(widthDimension: .fractionalWidth(1), heightDimension: .absolute(SettingsHeaderView.height)),
                 elementKind: "header",
                 alignment: .top
             )
             header.pinToVisibleBounds = false
             section.boundarySupplementaryItems = [header]
-            section.interGroupSpacing = 10
+            let background = NSCollectionLayoutDecorationItem.background(elementKind: SettingsGroupBackgroundView.kind)
+            background.contentInsets = NSDirectionalEdgeInsets(top: SettingsHeaderView.height, leading: 0, bottom: 0, trailing: 0)
+            section.decorationItems = [background]
             return section
         }
+        layout.register(SettingsGroupBackgroundView.self, forDecorationViewOfKind: SettingsGroupBackgroundView.kind)
         return UICollectionView(frame: .zero, collectionViewLayout: layout)
     }()
 
@@ -394,22 +393,29 @@ class SettingsSwitchCell: BLMotionCollectionViewCell {
     }
 
     override func didUpdateFocus(in context: UIFocusUpdateContext, with coordinator: UIFocusAnimationCoordinator) {
-        updateColor()
+        super.didUpdateFocus(in: context, with: coordinator)
+        coordinator.addCoordinatedAnimations {
+            self.updateColor()
+        }
     }
 
     func setupView() {
+        scaleFactor = 1.02
         contentView.addSubview(titleLabel)
         contentView.addSubview(descLabel)
-        contentView.layer.cornerRadius = 10
+        contentView.layer.cornerRadius = Theme.rowRadius
+        contentView.layer.cornerCurve = .continuous
+        titleLabel.font = .systemFont(ofSize: 28, weight: .medium)
+        descLabel.font = .systemFont(ofSize: 25)
 
         titleLabel.snp.makeConstraints { make in
-            make.leading.equalToSuperview().offset(20)
+            make.leading.equalToSuperview().offset(26)
             make.centerY.equalToSuperview()
-            make.trailing.lessThanOrEqualTo(descLabel.snp.leading).offset(-10)
+            make.trailing.lessThanOrEqualTo(descLabel.snp.leading).offset(-16)
         }
 
         descLabel.snp.makeConstraints { make in
-            make.trailing.equalToSuperview().offset(-20)
+            make.trailing.equalToSuperview().offset(-26)
             make.centerY.equalToSuperview()
         }
 
@@ -419,25 +425,20 @@ class SettingsSwitchCell: BLMotionCollectionViewCell {
     }
 
     func updateColor() {
-        if traitCollection.userInterfaceStyle == .dark {
-            if isFocused {
-                contentView.backgroundColor = UIColor.white
-                titleLabel.textColor = UIColor.black
-                descLabel.textColor = UIColor.black
-            } else {
-                contentView.backgroundColor = UIColor.clear
-                titleLabel.textColor = UIColor.white
-                descLabel.textColor = UIColor.secondaryLabel
-            }
+        if isFocused {
+            contentView.backgroundColor = Theme.focusedFill
+            titleLabel.textColor = Theme.focusedText
+            descLabel.textColor = Theme.focusedText.withAlphaComponent(0.72)
         } else {
-            contentView.backgroundColor = isFocused ? UIColor.white : UIColor.clear
-            titleLabel.textColor = .black
-            descLabel.textColor = UIColor.secondaryLabel
+            contentView.backgroundColor = .clear
+            titleLabel.textColor = Theme.textPrimary
+            descLabel.textColor = Theme.textSecondary
         }
     }
 }
 
 class SettingsHeaderView: UICollectionReusableView {
+    static let height: CGFloat = 64
     let label = UILabel()
 
     override init(frame: CGRect) {
@@ -452,13 +453,29 @@ class SettingsHeaderView: UICollectionReusableView {
 
     func setup() {
         addSubview(label)
-        label.font = .preferredFont(forTextStyle: .footnote)
-        label.textColor = UIColor.secondaryLabel
+        label.font = .systemFont(ofSize: 24, weight: .semibold)
+        label.textColor = Theme.textTertiary
         label.snp.makeConstraints { make in
-            make.leading.equalToSuperview().offset(20)
-            make.top.equalToSuperview().offset(20)
-            make.bottom.equalToSuperview().offset(-20)
+            make.leading.equalToSuperview().offset(36)
+            make.bottom.equalToSuperview().offset(-12)
         }
+    }
+}
+
+/// The rounded card behind each group of settings rows.
+class SettingsGroupBackgroundView: UICollectionReusableView {
+    static let kind = "settings-group-background"
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        backgroundColor = Theme.groupedFill
+        layer.cornerRadius = Theme.groupRadius
+        layer.cornerCurve = .continuous
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
     }
 }
 
