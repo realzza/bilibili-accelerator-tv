@@ -82,7 +82,7 @@ final class RoutingSession {
     /// A test from the panel waits for the next video request.
     private(set) var testPending = false
     private(set) var lastTest: RouteStatus.Test = .none
-    /// Rates of the last video fragments, in Mbps, oldest first.
+    /// The download speed once a second while this video plays, in Mbps, oldest first.
     private(set) var recentMbps: [Double] = []
     var random: () -> Double = { Double.random(in: 0..<1) }
 
@@ -115,12 +115,7 @@ final class RoutingSession {
     /// A video fragment that arrived whole.
     func noteCompleted(host: String, rep: MediaRep, seconds: Double, bytes: Int64) {
         guard rep.kind == .video else { return }
-        if estimators[host, default: Estimator()].sample(duration: seconds, bytes: bytes) {
-            recentMbps.append(Double(bytes) * 8 / seconds / 1_000_000)
-            if recentMbps.count > 30 {
-                recentMbps.removeFirst(recentMbps.count - 30)
-            }
-        }
+        estimators[host, default: Estimator()].sample(duration: seconds, bytes: bytes)
         carried[host, default: 0] += bytes
         if host == currentHost(for: rep) {
             activeCarriedBytes += bytes
@@ -135,6 +130,13 @@ final class RoutingSession {
 
     func noteFailure(_ host: String, now: TimeInterval = Recorder.now()) {
         failures[host, default: []].append(now)
+    }
+
+    func noteRateSample(_ mbps: Double) {
+        recentMbps.append(mbps)
+        if recentMbps.count > 30 {
+            recentMbps.removeFirst(recentMbps.count - 30)
+        }
     }
 
     // MARK: - Races

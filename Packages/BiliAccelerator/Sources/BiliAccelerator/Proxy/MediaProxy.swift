@@ -73,6 +73,13 @@ final class MediaProxy {
         current?.session.requestTest()
     }
 
+    /// Called once a second while a player is attached, for the rate history.
+    func sampleRate() {
+        if let session = current?.session, let mbps = recorder.currentVideoMbps() {
+            session.noteRateSample(mbps)
+        }
+    }
+
     func status(player: PlayerProbe.Snapshot?) -> RouteStatus? {
         guard let (session, rep) = current else { return nil }
         let host = session.currentHost(for: rep)
@@ -80,7 +87,8 @@ final class MediaProxy {
         return RouteStatus(host: host,
                            isIssuedHost: host == Candidates.key(rep.preferred),
                            switches: session.switches.count,
-                           mbps: session.estimate(host).map { $0 / 1_000_000 },
+                           currentMbps: recorder.currentVideoMbps(),
+                           sustainedMbps: session.estimate(host).map { $0 / 1_000_000 },
                            recentMbps: session.recentMbps,
                            bufferSeconds: bufferAhead,
                            requiredMbps: required > 0 ? Double(required) / 1_000_000 : nil,

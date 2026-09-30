@@ -19,9 +19,11 @@ public struct RouteStatus: Equatable {
     public let isIssuedHost: Bool
     /// Times the engine moved this video to another host.
     public let switches: Int
-    /// Sustained rate on the current host, in Mbps.
-    public let mbps: Double?
-    /// Rates of the last video fragments on any host, oldest first, in Mbps.
+    /// Download speed of the latest video fetch, live while it runs, in Mbps.
+    public let currentMbps: Double?
+    /// What routing believes the current host sustains, in Mbps. It moves slowly on purpose.
+    public let sustainedMbps: Double?
+    /// The download speed once a second for the last 30 seconds, oldest first, in Mbps.
     public let recentMbps: [Double]
     /// Seconds buffered ahead of the playhead.
     public let bufferSeconds: Double?

@@ -177,6 +177,7 @@ public final class Accelerator {
             if let snapshot {
                 lastPlayer = snapshot
                 proxy?.bufferAhead = snapshot.bufferedAhead
+                proxy?.sampleRate()
             }
             snapshotCount += 1
             if snapshotCount % 2 == 0 {
