@@ -23,6 +23,7 @@ final class VideoDetailHeaderView: UIView {
     let likeButton = DetailActionButton(symbol: "hand.thumbsup", onSymbol: "hand.thumbsup.fill", title: "点赞")
     let coinButton = DetailActionButton(symbol: "bitcoinsign.circle", onSymbol: "bitcoinsign.circle.fill", title: "投币")
     let favButton = DetailActionButton(symbol: "star", onSymbol: "star.fill", title: "收藏")
+    let watchLaterButton = DetailActionButton(symbol: "clock", onSymbol: "clock.fill", title: "稍后看")
     let dislikeButton = DetailActionButton(symbol: "hand.thumbsdown", onSymbol: "hand.thumbsdown.fill", title: "不喜欢")
 
     var isFollowing = false {
@@ -108,7 +109,7 @@ final class VideoDetailHeaderView: UIView {
         uploaderRow.alignment = .center
         uploaderRow.spacing = 20
 
-        let actionRow = UIStackView(arrangedSubviews: [playButton, likeButton, coinButton, favButton, dislikeButton])
+        let actionRow = UIStackView(arrangedSubviews: [playButton, likeButton, coinButton, favButton, watchLaterButton, dislikeButton])
         actionRow.axis = .horizontal
         actionRow.alignment = .top
         actionRow.spacing = 28
@@ -136,7 +137,7 @@ final class VideoDetailHeaderView: UIView {
     }
 }
 
-/// A round button with a count or name under it, for 点赞, 投币, 收藏 and 不喜欢.
+/// A round button with a count or name under it, for 点赞, 投币, 收藏, 稍后看 and 不喜欢.
 final class DetailActionButton: UIStackView {
     static let side: CGFloat = 80
 

@@ -151,6 +151,7 @@ class VideoDetailViewController: UIViewController {
         header.likeButton.button.addAction(UIAction { [weak self] _ in self?.actionLike() }, for: .primaryActionTriggered)
         header.coinButton.button.addAction(UIAction { [weak self] _ in self?.actionCoin() }, for: .primaryActionTriggered)
         header.favButton.button.addAction(UIAction { [weak self] _ in self?.actionFavorite() }, for: .primaryActionTriggered)
+        header.watchLaterButton.button.addAction(UIAction { [weak self] _ in self?.actionWatchLater() }, for: .primaryActionTriggered)
         header.dislikeButton.button.addAction(UIAction { [weak self] _ in self?.actionDislike() }, for: .primaryActionTriggered)
         header.noteView.onPrimaryAction = { [weak self] note in
             let detail = ContentDetailViewController.createDesp(content: note.label.text ?? "")
@@ -580,6 +581,19 @@ class VideoDetailViewController: UIViewController {
             }
             alert.addAction(UIAlertAction(title: "取消", style: .cancel))
             present(alert, animated: true)
+        }
+    }
+
+    private func actionWatchLater() {
+        let button = header.watchLaterButton
+        let add = !button.isOn
+        button.isOn = add
+        button.title = add ? "已添加" : "稍后看"
+        let aid = aid
+        Task {
+            guard await !WebRequest.requestToView(aid: aid, add: add) else { return }
+            button.isOn = !add
+            button.title = add ? "稍后看" : "已添加"
         }
     }
 
