@@ -46,8 +46,8 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
     #if DEBUG
         /// Commands from the accelerator's debug server, for driving tests from a Mac:
-        /// `play?aid=&cid=` (or `epid=`), `detail?aid=&cid=`, `stop`, `tab?index=`, `quality?qn=`,
-        /// `seek?to=<fraction of the duration>` and `accel?on=0|1`.
+        /// `play?aid=&cid=` (or `epid=`), `detail?aid=&cid=`, `stop`, `home` (the tab bar, even when
+        /// signed out), `tab?index=`, `quality?qn=`, `seek?to=<fraction of the duration>` and `accel?on=0|1`.
         private static func handleDebugCommand(_ command: String, _ parameters: [String: String]) {
             switch command {
             case "seek":
@@ -69,6 +69,8 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
                     .present(from: UIViewController.topMostViewController(), direatlyEnterVideo: false)
             case "stop":
                 AppDelegate.shared.window?.rootViewController?.dismiss(animated: false)
+            case "home":
+                AppDelegate.shared.showTabBar()
             case "tab":
                 if let index = parameters["index"].flatMap(Int.init),
                    let tabs = AppDelegate.shared.window?.rootViewController as? UITabBarController,
