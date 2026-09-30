@@ -34,11 +34,15 @@ class MyLiveViewController: StandardVideoCollectionViewController<LiveRoom> {
         super.setupCollectionView()
         collectionVC.styleOverride = .sideBar
         collectionVC.pageSize = 10
+        collectionVC.showHeader = true
+        collectionVC.headerText = "关注的直播"
         reloadInterval = 15 * 60
     }
 
     override func request(page: Int) async throws -> [LiveRoom] {
-        try await WebRequest.requestLiveRoom(page: page)
+        let (rooms, count) = try await WebRequest.requestLiveRoom(page: page)
+        collectionVC.headerDetail = count.map(String.init)
+        return rooms
     }
 
     override func goDetail(with record: LiveRoom) {
@@ -106,8 +110,13 @@ struct LiveRoom: DisplayData, Codable {
     var overlay: DisplayOverlay? {
         var leftItems = [DisplayOverlay.DisplayOverlayItem]()
         leftItems.append(DisplayOverlay.DisplayOverlayItem(icon: nil, text: area_v2_name))
-        return DisplayOverlay(leftItems: leftItems)
+        return DisplayOverlay(leftItems: leftItems, badge: .live)
     }
+}
+
+extension DisplayOverlay.DisplayOverlayBadge {
+    /// The pink marker on a room that is on air.
+    static let live = DisplayOverlay.DisplayOverlayBadge(color: Theme.accent, text: "直播中")
 }
 
 extension LiveRoom: PlayableData {
@@ -123,12 +132,14 @@ extension WebRequest.EndPoint {
 }
 
 extension WebRequest {
-    static func requestLiveRoom(page: Int) async throws -> [LiveRoom] {
+    /// A page of followed rooms that are live, and how many are live in all.
+    static func requestLiveRoom(page: Int) async throws -> ([LiveRoom], Int?) {
         struct Resp: Codable {
             let rooms: [LiveRoom]
+            let count: Int?
         }
         let resp: Resp = try await request(url: EndPoint.liveRoom, parameters: ["page_size": 10, "page": page])
-        return resp.rooms
+        return (resp.rooms, resp.count)
     }
 
     static func requestAreaLiveRoom(area: Int, page: Int) async throws -> [AreaLiveRoom] {
@@ -178,7 +189,7 @@ struct AreaLiveRoom: DisplayData, Codable, PlayableData {
     var overlay: DisplayOverlay? {
         var leftItems = [DisplayOverlay.DisplayOverlayItem]()
         leftItems.append(DisplayOverlay.DisplayOverlayItem(icon: nil, text: area_v2_name))
-        return DisplayOverlay(leftItems: leftItems)
+        return DisplayOverlay(leftItems: leftItems, badge: .live)
     }
 
     func toLiveRoom() -> LiveRoom {
