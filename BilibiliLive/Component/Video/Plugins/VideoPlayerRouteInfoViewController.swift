@@ -20,6 +20,9 @@ final class VideoPlayerRouteInfoViewController: UIViewController {
     private let testButton = UIButton(configuration: .capsule())
     private let testCaption = UILabel()
     private let content = UIStackView()
+    /// The info panel draws no background behind a custom tab, and the gray text needs one over
+    /// a bright picture.
+    private let card = UIVisualEffectView(effect: UIBlurEffect(style: .dark))
     private let messageLabel = UILabel()
     private var timer: Timer?
     private var status: RouteStatus?
@@ -40,7 +43,7 @@ final class VideoPlayerRouteInfoViewController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        preferredContentSize = CGSize(width: 0, height: 250)
+        preferredContentSize = CGSize(width: 0, height: 290)
         view.backgroundColor = .clear
 
         dot.layer.cornerRadius = 7
@@ -72,7 +75,7 @@ final class VideoPlayerRouteInfoViewController: UIViewController {
         rateHeader.distribution = .equalSpacing
         rateLabel.textColor = Theme.textPrimary
         sparkline.snp.makeConstraints { make in
-            make.height.equalTo(44)
+            make.height.equalTo(56)
         }
         let rateStack = UIStackView(arrangedSubviews: [rateHeader, rateLabel, sparkline])
         rateStack.axis = .vertical
@@ -110,10 +113,17 @@ final class VideoPlayerRouteInfoViewController: UIViewController {
         content.axis = .horizontal
         content.distribution = .fillEqually
         content.spacing = 40
-        view.addSubview(content)
+        card.layer.cornerRadius = 36
+        card.layer.cornerCurve = .continuous
+        card.clipsToBounds = true
+        view.addSubview(card)
+        card.snp.makeConstraints { make in
+            make.edges.equalToSuperview()
+        }
+        card.contentView.addSubview(content)
         content.snp.makeConstraints { make in
-            make.leading.trailing.equalToSuperview().inset(40)
-            make.top.bottom.equalToSuperview().inset(16)
+            make.leading.trailing.equalToSuperview().inset(36)
+            make.top.bottom.equalToSuperview().inset(24)
         }
 
         messageLabel.font = .systemFont(ofSize: 28, weight: .medium)
@@ -170,7 +180,7 @@ final class VideoPlayerRouteInfoViewController: UIViewController {
         if status.isStalled {
             dot.backgroundColor = .systemOrange
             healthLabel.text = "正在缓冲"
-        } else if let mbps = status.mbps, let required = status.requiredMbps, mbps < required * 1.2,
+        } else if let mbps = status.sustainedMbps, let required = status.requiredMbps, mbps < required * 1.2,
                   (status.bufferSeconds ?? 0) < 30
         {
             dot.backgroundColor = .systemYellow
@@ -182,7 +192,8 @@ final class VideoPlayerRouteInfoViewController: UIViewController {
         hostLabel.text = status.isIssuedHost ? "原生线路 · \(name)" : "已切换到 \(name)"
         switchesLabel.text = status.switches == 0 ? "本视频未切换线路" : "本视频切换了 \(status.switches) 次线路"
 
-        let rate = NSMutableAttributedString(string: status.mbps.map { String(format: "%.1f", $0) } ?? "—",
+        let shown = status.currentMbps ?? status.sustainedMbps
+        let rate = NSMutableAttributedString(string: shown.map { String(format: "%.1f", $0) } ?? "—",
                                              attributes: [.font: UIFont.systemFont(ofSize: 44, weight: .bold)])
         rate.append(NSAttributedString(string: " Mbps", attributes: [.font: UIFont.systemFont(ofSize: 24, weight: .semibold),
                                                                      .foregroundColor: Theme.textSecondary]))
@@ -240,7 +251,7 @@ final class VideoPlayerRouteInfoViewController: UIViewController {
     }
 }
 
-/// Recent fragment rates as a line, with the video's bitrate as a dashed line for scale.
+/// The download speed over the last 30 seconds, with the video's bitrate dashed for scale.
 private final class SparklineView: UIView {
     private let line = CAShapeLayer()
     private let reference = CAShapeLayer()
@@ -254,7 +265,7 @@ private final class SparklineView: UIView {
         reference.lineDashPattern = [6, 6]
         reference.fillColor = nil
         layer.addSublayer(reference)
-        line.strokeColor = Theme.textPrimary.cgColor
+        line.strokeColor = Theme.accent.cgColor
         line.lineWidth = 3
         line.lineJoin = .round
         line.lineCap = .round
