@@ -339,6 +339,10 @@ class VideoPlayerViewModel {
             plugins.append(infoTabs)
         }
 
+        if Settings.acceleratorEnabled {
+            plugins.append(BVideoRoutePlugin())
+        }
+
         // 添加画质选择器插件
         let qualitySelector = BVideoQualityPlugin(detailData: data) { [weak playplugin] qualityId, streamIndex in
             Task { @MainActor in

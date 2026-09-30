@@ -47,7 +47,8 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     #if DEBUG
         /// Commands from the accelerator's debug server, for driving tests from a Mac:
         /// `play?aid=&cid=` (or `epid=`), `detail?aid=&cid=`, `stop`, `home` (the tab bar, even when
-        /// signed out), `tab?index=`, `quality?qn=`, `seek?to=<fraction of the duration>` and `accel?on=0|1`.
+        /// signed out), `tab?index=`, `quality?qn=`, `seek?to=<fraction of the duration>`, `accel?on=0|1`,
+        /// `route` (the 线路 tab on its own) and `routetest` (its test button).
         private static func handleDebugCommand(_ command: String, _ parameters: [String: String]) {
             switch command {
             case "seek":
@@ -78,6 +79,23 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
                 {
                     tabs.selectedIndex = index
                 }
+            case "route":
+                // The 线路 tab on its own, over whatever is showing, to check it without a remote.
+                let panel = UIViewController()
+                panel.modalPresentationStyle = .overFullScreen
+                let backdrop = UIVisualEffectView(effect: UIBlurEffect(style: .dark))
+                backdrop.frame = CGRect(x: 80, y: 56, width: 1760, height: 290)
+                backdrop.layer.cornerRadius = 40
+                backdrop.clipsToBounds = true
+                panel.view.addSubview(backdrop)
+                let route = VideoPlayerRouteInfoViewController()
+                panel.addChild(route)
+                route.view.frame = backdrop.bounds.insetBy(dx: 0, dy: 20)
+                backdrop.contentView.addSubview(route.view)
+                route.didMove(toParent: panel)
+                UIViewController.topMostViewController().present(panel, animated: false)
+            case "routetest":
+                Accelerator.shared.testOtherHosts()
             case "accel":
                 let on = parameters["on"] != "0"
                 Settings.acceleratorEnabled = on
