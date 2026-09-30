@@ -139,8 +139,9 @@ class VideoDetailViewController: UIViewController {
             make.width.equalToSuperview().multipliedBy(2.0 / 3)
             make.height.equalTo(backdrop.snp.width).multipliedBy(9.0 / 16)
         }
+        // tvOS scrolls about 90 pt to bring 播放 toward the middle, so dimming starts past that.
         scrollView.publisher(for: \.contentOffset).sink { [weak self] offset in
-            self?.backdrop.alpha = 1 - min(max(offset.y / 420, 0), 1)
+            self?.backdrop.alpha = 1 - min(max((offset.y - 120) / 400, 0), 1)
         }.store(in: &subscriptions)
 
         contentStackView.insertArrangedSubview(header, at: 0)
@@ -688,14 +689,28 @@ extension VideoDetailViewController: UICollectionViewDataSource {
 }
 
 class BLCardView: TVCardView {
+    /// White at 0.08 over the ground, made opaque: the card draws translucent colors as white.
+    static let restingFill = UIColor(red: 33 / 255, green: 35 / 255, blue: 38 / 255, alpha: 1)
+
+    var fill = BLCardView.restingFill {
+        didSet { cardBackgroundColor = fill }
+    }
+
+    /// The cell around the card takes focus and draws it. The card's own focus effect grows its
+    /// content past the clipped background, which only shifts the content.
+    override var canBecomeFocused: Bool {
+        false
+    }
+
     override func didMoveToSuperview() {
         super.didMoveToSuperview()
-        subviews.first?.subviews.first?.subviews.last?.subviews.first?.subviews.first?.layer.cornerRadius = 12
+        focusSizeIncrease = .zero
+        subviews.first?.subviews.first?.subviews.last?.subviews.first?.subviews.first?.layer.cornerRadius = Theme.rowRadius
     }
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        cardBackgroundColor = UIColor(named: "bgColor")
+        cardBackgroundColor = fill
     }
 }
 
