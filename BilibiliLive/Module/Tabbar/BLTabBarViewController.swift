@@ -16,9 +16,13 @@ class BLTabBarViewController: UITabBarController, UITabBarControllerDelegate {
         NotificationCenter.default.removeObserver(self)
     }
 
+    /// Tab titles a little larger than the system's, which read small from the couch.
+    static let titleFont = UIFont.systemFont(ofSize: 32, weight: .semibold)
+
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = Theme.background
+        enlargeTabTitles()
         delegate = self
         Settings.bootstrapTabBarPlacementModelIfNeeded()
         NotificationCenter.default.addObserver(self, selector: #selector(handleTabBarPagesDidChange), name: .tabBarPagesDidChange, object: nil)
@@ -50,6 +54,17 @@ class BLTabBarViewController: UITabBarController, UITabBarControllerDelegate {
         if let previousPage, let index = controllers.firstIndex(where: { $0.tabBarItem.accessibilityIdentifier == previousPage }) {
             selectedIndex = index
         }
+    }
+
+    /// Starts from the system's appearance, so the bar keeps its glass, and changes only the font.
+    private func enlargeTabTitles() {
+        let appearance = tabBar.standardAppearance.copy()
+        for layout in [appearance.stackedLayoutAppearance, appearance.inlineLayoutAppearance, appearance.compactInlineLayoutAppearance] {
+            for state in [layout.normal, layout.selected, layout.focused, layout.disabled] {
+                state.titleTextAttributes[.font] = Self.titleFont
+            }
+        }
+        tabBar.standardAppearance = appearance
     }
 
     private func controller(for page: TabBarPage) -> UIViewController {
