@@ -41,31 +41,54 @@ class PersonalViewController: UIViewController, BLTabBarContentVCProtocol {
         return view
     }()
 
+    private static let avatarSide: CGFloat = 96
+    /// The sidebar's width, from the screen's safe margin.
+    private static let sidebarWidth: CGFloat = 400
+    /// Room around the menu rows for their focus scale, which the collection view would clip.
+    private static let menuOutset: CGFloat = 20
+
     private let avatarImageView: UIImageView = {
         let imageView = UIImageView()
-        imageView.contentMode = .scaleAspectFit
+        imageView.contentMode = .scaleAspectFill
         imageView.clipsToBounds = true
+        imageView.backgroundColor = Theme.groupedFill
+        imageView.tintColor = Theme.textTertiary
         imageView.translatesAutoresizingMaskIntoConstraints = false
         return imageView
     }()
 
     private let usernameLabel: UILabel = {
         let label = UILabel()
-        label.font = UIFont.preferredFont(forTextStyle: .headline)
+        label.font = .systemFont(ofSize: 30, weight: .bold)
+        label.textColor = Theme.textPrimary
         label.lineBreakMode = .byTruncatingTail
         label.translatesAutoresizingMaskIntoConstraints = false
         return label
     }()
 
+    private let vipLabel: PillLabel = {
+        let label = PillLabel()
+        label.insets = UIEdgeInsets(top: 3, left: 12, bottom: 3, right: 12)
+        label.font = .systemFont(ofSize: 18, weight: .bold)
+        label.textColor = Theme.onAccent
+        label.backgroundColor = Theme.accent
+        label.layer.cornerRadius = 10
+        label.clipsToBounds = true
+        label.isHidden = true
+        return label
+    }()
+
     private let leftCollectionView: UICollectionView = {
         let layout = UICollectionViewFlowLayout()
-        layout.minimumLineSpacing = 6
+        layout.minimumLineSpacing = 4
         layout.minimumInteritemSpacing = 4
-        layout.itemSize = CGSize(width: 420, height: 64)
-        layout.sectionInset = UIEdgeInsets(top: 0, left: 20, bottom: 0, right: 0)
+        layout.itemSize = CGSize(width: PersonalViewController.sidebarWidth, height: 64)
+        let outset = PersonalViewController.menuOutset
+        layout.sectionInset = UIEdgeInsets(top: 10, left: outset, bottom: 40, right: outset)
         let collectionView = UICollectionView(frame: .zero, collectionViewLayout: layout)
         collectionView.translatesAutoresizingMaskIntoConstraints = false
         collectionView.backgroundColor = .clear
+        collectionView.contentInsetAdjustmentBehavior = .never
         return collectionView
     }()
 
@@ -77,7 +100,7 @@ class PersonalViewController: UIViewController, BLTabBarContentVCProtocol {
         setupUI()
         setupData()
         leftCollectionView.reloadData()
-        avatarImageView.layer.cornerRadius = 50
+        avatarImageView.layer.cornerRadius = Self.avatarSide / 2
         leftCollectionView.register(BLSettingLineCollectionViewCell.self, forCellWithReuseIdentifier: "cell")
         leftCollectionView.selectItem(at: IndexPath(row: 0, section: 0), animated: false, scrollPosition: .top)
         collectionView(leftCollectionView, didSelectItemAt: IndexPath(row: 0, section: 0))
@@ -182,9 +205,12 @@ class PersonalViewController: UIViewController, BLTabBarContentVCProtocol {
         guard let account = AccountManager.shared.activeAccount else {
             usernameLabel.text = "未登录"
             avatarImageView.image = nil
+            vipLabel.isHidden = true
             return
         }
         usernameLabel.text = account.profile.username
+        vipLabel.text = account.profile.vipLabel
+        vipLabel.isHidden = account.profile.vipLabel == nil
         if let url = URL(string: account.profile.avatar), !account.profile.avatar.isEmpty {
             avatarImageView.kf.setImage(with: url)
         } else {
@@ -199,45 +225,52 @@ class PersonalViewController: UIViewController, BLTabBarContentVCProtocol {
         leftContainerView.addSubview(profileContainerView)
         leftContainerView.addSubview(leftCollectionView)
 
+        let nameStack = UIStackView(arrangedSubviews: [usernameLabel, vipLabel])
+        nameStack.axis = .vertical
+        nameStack.alignment = .leading
+        nameStack.spacing = 8
         profileContainerView.addSubview(avatarImageView)
-        profileContainerView.addSubview(usernameLabel)
+        profileContainerView.addSubview(nameStack)
 
         leftCollectionView.delegate = self
         leftCollectionView.dataSource = self
 
+        // The avatar and the menu rows start at the safe margin, as the cards of other tabs do.
         leftContainerView.snp.makeConstraints { make in
-            make.leading.equalToSuperview()
-            make.top.equalTo(view.safeAreaLayoutGuide.snp.top)
+            make.leading.equalTo(view.safeAreaLayoutGuide.snp.leading)
+            make.top.equalTo(view.safeAreaLayoutGuide.snp.top).offset(20)
             make.bottom.equalToSuperview()
-            make.width.equalTo(500)
+            make.width.equalTo(Self.sidebarWidth)
         }
 
         contentView.snp.makeConstraints { make in
-            make.leading.equalTo(leftContainerView.snp.trailing).offset(8)
+            make.leading.equalTo(leftContainerView.snp.trailing).offset(40)
             make.top.equalTo(view.safeAreaLayoutGuide.snp.top)
             make.trailing.bottom.equalToSuperview()
         }
 
         profileContainerView.snp.makeConstraints { make in
             make.leading.top.trailing.equalToSuperview()
-            make.height.equalTo(100)
+            make.height.equalTo(Self.avatarSide)
         }
 
         avatarImageView.snp.makeConstraints { make in
-            make.leading.equalToSuperview().offset(20)
-            make.top.bottom.equalToSuperview()
+            make.leading.top.bottom.equalToSuperview()
             make.width.equalTo(avatarImageView.snp.height)
         }
 
-        usernameLabel.snp.makeConstraints { make in
-            make.leading.equalTo(avatarImageView.snp.trailing).offset(20)
-            make.trailing.equalToSuperview().offset(-20)
+        nameStack.snp.makeConstraints { make in
+            make.leading.equalTo(avatarImageView.snp.trailing).offset(22)
+            make.trailing.lessThanOrEqualToSuperview()
             make.centerY.equalTo(avatarImageView.snp.centerY)
         }
 
+        leftCollectionView.clipsToBounds = false
         leftCollectionView.snp.makeConstraints { make in
-            make.leading.trailing.bottom.equalToSuperview()
-            make.top.equalTo(profileContainerView.snp.bottom).offset(40)
+            make.leading.equalToSuperview().offset(-Self.menuOutset)
+            make.trailing.equalToSuperview().offset(Self.menuOutset)
+            make.bottom.equalToSuperview()
+            make.top.equalTo(profileContainerView.snp.bottom).offset(18)
         }
     }
 }

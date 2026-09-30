@@ -6,6 +6,8 @@ final class AccountManager {
         let mid: Int
         var username: String
         var avatar: String
+        /// `大会员` or `年度大会员` while the membership is active.
+        var vipLabel: String? = nil
     }
 
     struct Account: Codable, Equatable {
@@ -118,11 +120,12 @@ final class AccountManager {
         notifyChange()
     }
 
-    func updateActiveProfile(username: String, avatar: String) {
+    func updateActiveProfile(username: String, avatar: String, vipLabel: String? = nil) {
         guard let mid = activeAccount?.profile.mid else { return }
         updateAccount(mid: mid) { account in
             account.profile.username = username
             account.profile.avatar = avatar
+            account.profile.vipLabel = vipLabel
         }
         persistAll()
         notifyChange()
@@ -134,8 +137,10 @@ final class AccountManager {
                 guard let self else { return }
                 switch result {
                 case let .success(json):
+                    let vipLabel = json["vipStatus"].intValue == 1 ? json["vip_label"]["text"].string : nil
                     self.updateActiveProfile(username: json["uname"].stringValue,
-                                             avatar: json["face"].stringValue)
+                                             avatar: json["face"].stringValue,
+                                             vipLabel: vipLabel.flatMap { $0.isEmpty ? nil : $0 })
                 case .failure:
                     break
                 }

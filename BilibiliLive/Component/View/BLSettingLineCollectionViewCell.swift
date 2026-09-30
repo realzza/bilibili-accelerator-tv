@@ -61,7 +61,8 @@ class BLSettingLineCollectionViewCell: BLMotionCollectionViewCell {
     }
 
     static func makeLayout() -> UICollectionViewLayout {
-        let itemSize = NSCollectionLayoutSize(widthDimension: .fractionalWidth(0.86),
+        // Rows start at the safe margin, where the avatar of 我的 and the cards of other tabs start.
+        let itemSize = NSCollectionLayoutSize(widthDimension: .absolute(380),
                                               heightDimension: .fractionalHeight(1.0))
         let item = NSCollectionLayoutItem(layoutSize: itemSize)
 
@@ -69,7 +70,7 @@ class BLSettingLineCollectionViewCell: BLMotionCollectionViewCell {
                                                heightDimension: .absolute(68))
         let group = NSCollectionLayoutGroup.horizontal(layoutSize: groupSize,
                                                        subitems: [item])
-        group.edgeSpacing = .init(leading: .fixed(40), top: .fixed(6), trailing: nil, bottom: nil)
+        group.edgeSpacing = .init(leading: nil, top: .fixed(6), trailing: nil, bottom: nil)
         let section = NSCollectionLayoutSection(group: group)
         section.contentInsets = NSDirectionalEdgeInsets(top: 20, leading: 0, bottom: 40, trailing: 0)
         let layout = UICollectionViewCompositionalLayout(section: section)
