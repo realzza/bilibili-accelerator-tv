@@ -10,8 +10,8 @@ import MarqueeLabel
 import TVUIKit
 import UIKit
 
-/// A video card: a clean 16:9 thumbnail with only the duration on it, a one-line title that
-/// scrolls when focused, and one line of metadata below.
+/// A video card: a 16:9 thumbnail with the view count bottom left and the duration bottom right,
+/// a one-line title that scrolls when focused, and one line of metadata below.
 class FeedCollectionViewCell: BLMotionCollectionViewCell {
     var onLongPress: (() -> Void)?
     var styleOverride: FeedDisplayStyle? { didSet { if oldValue != styleOverride { updateStyle() } }}
@@ -21,6 +21,7 @@ class FeedCollectionViewCell: BLMotionCollectionViewCell {
     private let artwork = UIView()
     private let imageView = UIImageView()
     private let durationLabel = PillLabel()
+    private let viewsLabel = PillLabel()
     private let badgeLabel = PillLabel()
 
     override var shadowLayer: CALayer {
@@ -48,15 +49,21 @@ class FeedCollectionViewCell: BLMotionCollectionViewCell {
         imageView.contentMode = .scaleAspectFill
         imageView.backgroundColor = UIColor(white: 1, alpha: 0.06)
 
-        artwork.addSubview(durationLabel)
+        for pill in [durationLabel, viewsLabel] {
+            artwork.addSubview(pill)
+            pill.font = Self.pillFont
+            pill.textColor = Theme.textPrimary
+            pill.backgroundColor = Theme.badgeFill
+            pill.layer.cornerRadius = 10
+            pill.clipsToBounds = true
+        }
         durationLabel.snp.makeConstraints { make in
             make.trailing.bottom.equalToSuperview().inset(12)
         }
-        durationLabel.font = .systemFont(ofSize: 20, weight: .semibold)
-        durationLabel.textColor = Theme.textPrimary
-        durationLabel.backgroundColor = Theme.badgeFill
-        durationLabel.layer.cornerRadius = 10
-        durationLabel.clipsToBounds = true
+        viewsLabel.snp.makeConstraints { make in
+            make.leading.bottom.equalToSuperview().inset(12)
+            make.trailing.lessThanOrEqualTo(durationLabel.snp.leading).offset(-8)
+        }
 
         artwork.addSubview(badgeLabel)
         badgeLabel.snp.makeConstraints { make in
@@ -89,9 +96,11 @@ class FeedCollectionViewCell: BLMotionCollectionViewCell {
     func setup(data: any DisplayData) {
         titleLabel.text = data.title
         metaLabel.text = Self.metaText(for: data)
-        let duration = CardFacts(overlay: data.overlay).duration
-        durationLabel.text = duration
-        durationLabel.isHidden = (duration ?? "").isEmpty
+        let facts = CardFacts(overlay: data.overlay)
+        durationLabel.text = facts.duration
+        durationLabel.isHidden = (facts.duration ?? "").isEmpty
+        viewsLabel.attributedText = facts.views.map(Self.viewsText)
+        viewsLabel.isHidden = facts.views == nil
         if let badge = data.overlay?.badge, !badge.text.isEmpty {
             badgeLabel.text = badge.text
             badgeLabel.backgroundColor = badge.color ?? Theme.accent
@@ -108,15 +117,33 @@ class FeedCollectionViewCell: BLMotionCollectionViewCell {
         updateStyle()
     }
 
-    /// Up name, views and category or area on one line. Danmaku counts stay off the card.
+    private static let pillFont = UIFont.systemFont(ofSize: 20, weight: .semibold)
+
+    /// `▶ 18.6万` for `18.6万播放` or `18.6万观看`, to sit on the thumbnail like the duration.
+    static func viewsText(_ views: String) -> NSAttributedString {
+        var count = views
+        for suffix in ["播放", "观看"] where count.hasSuffix(suffix) {
+            count = String(count.dropLast(suffix.count))
+        }
+        let text = NSMutableAttributedString()
+        let symbol = UIImage(systemName: "play.fill",
+                             withConfiguration: UIImage.SymbolConfiguration(font: pillFont, scale: .small))
+        if let symbol = symbol?.withTintColor(Theme.textPrimary, renderingMode: .alwaysOriginal) {
+            text.append(NSAttributedString(attachment: NSTextAttachment(image: symbol)))
+            text.append(NSAttributedString(string: " "))
+        }
+        text.append(NSAttributedString(string: count.trimmingCharacters(in: .whitespaces)))
+        text.addAttributes([.font: pillFont, .foregroundColor: Theme.textPrimary], range: NSRange(location: 0, length: text.length))
+        return text
+    }
+
+    /// Up name, category or area, and date on one line. Views sit on the thumbnail; danmaku counts
+    /// stay off the card.
     static func metaText(for data: any DisplayData) -> String {
         let facts = CardFacts(overlay: data.overlay)
         var parts = [String]()
         if !data.ownerName.isEmpty {
             parts.append(data.ownerName)
-        }
-        if let views = facts.views {
-            parts.append(views)
         }
         parts += facts.others
         if let date = data.date, !date.isEmpty {
