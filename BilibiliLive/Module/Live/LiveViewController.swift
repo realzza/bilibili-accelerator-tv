@@ -93,11 +93,12 @@ struct LiveRoom: DisplayData, Codable {
     let cover_from_user: URL?
 
     var ownerName: String { uname }
+    /// The live frame, or the room's own cover for rooms with no frame, such as rebroadcasts.
     var pic: URL? {
-        if let keyframe {
-            return URL(string: keyframe)
+        if let keyframe, !keyframe.isEmpty, let url = URL(string: keyframe) {
+            return url
         }
-        return nil
+        return cover_from_user
     }
 
     var avatar: URL? { face }
