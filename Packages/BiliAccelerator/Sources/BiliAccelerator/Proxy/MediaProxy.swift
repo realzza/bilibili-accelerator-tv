@@ -25,6 +25,10 @@ final class MediaProxy {
     /// Seconds buffered ahead of the playhead in the player being watched, updated about once a
     /// second. Nil when no player reports it, as for feed previews.
     var bufferAhead: Double?
+    /// False while the app is in the background. tvOS defuncts a suspended app's sockets, so
+    /// requests fail then for reasons that say nothing about the CDN.
+    var appActive = true
+    var resumedAt: TimeInterval = 0
     private(set) var sessions: [String: RoutingSession] = [:]
     private var transfers: [ObjectIdentifier: ProxyTransfer] = [:]
     private var ticker: DispatchSourceTimer?
@@ -88,8 +92,15 @@ final class MediaProxy {
         ticker = timer
     }
 
+    /// Whether a failure now can be held against a host: not in the background, and not in the
+    /// first two seconds after coming back, when suspended requests are still failing.
+    func judging(now: TimeInterval = Recorder.now()) -> Bool {
+        appActive && now - resumedAt > 2
+    }
+
     private func tick() {
         let now = Recorder.now()
+        guard judging(now: now) else { return }
         for transfer in Array(transfers.values) {
             transfer.tick(now: now, bufferAhead: bufferAhead, requiredBps: recorder.requiredBps)
         }
@@ -383,6 +394,14 @@ final class ProxyTransfer {
     /// The active host failed or is too slow: its request ends and a race takes the rest.
     private func rescue(_ contender: Contender, reason: String, countsAsFailure: Bool) {
         let now = Recorder.now()
+        guard proxy.judging(now: now) else {
+            // A suspension, not the CDN: end the response and let AVPlayer ask again.
+            proxy.recorder.failed(contender.record, reason: "\(reason) (app in background)")
+            active = nil
+            contender.request.cancel()
+            giveUp()
+            return
+        }
         let priorFailures = session.recentFailures(contender.host, now: now)
         if countsAsFailure {
             session.noteFailure(contender.host, now: now)

@@ -64,6 +64,90 @@ class BVideoPlayPlugin: NSObject, CommonPlayerPlugin {
 
     deinit {
         networkLogTimer?.invalidate()
+        lifecycleObservers.forEach(NotificationCenter.default.removeObserver)
+    }
+
+    private var lifecycleObservers: [NSObjectProtocol] = []
+    /// Where playback stood when the item was unloaded for the background.
+    private var parked: (position: Double, playing: Bool)?
+
+    /// AVPlayer runs in another process and keeps asking the in-app accelerator for segments
+    /// while the app is suspended. Those requests fail with "could not connect", and after that
+    /// AVPlayer doesn't try the address again, not even on a seek or for a new item. So the item
+    /// is unloaded before the app is suspended and rebuilt at the same position on return.
+    /// Picture in picture keeps the app running and is left alone.
+    private func observeAppLifecycle() {
+        guard lifecycleObservers.isEmpty, !isMuted else { return }
+        let center = NotificationCenter.default
+        lifecycleObservers.append(center.addObserver(forName: UIApplication.didEnterBackgroundNotification,
+                                                     object: nil, queue: .main)
+            { [weak self] _ in
+                self?.parkForBackground()
+            })
+        lifecycleObservers.append(center.addObserver(forName: UIApplication.didBecomeActiveNotification,
+                                                     object: nil, queue: .main)
+            { [weak self] _ in
+                Task { @MainActor in
+                    await self?.unparkAfterBackground()
+                }
+            })
+    }
+
+    private var isInPictureInPicture: Bool {
+        guard let container = playerVC?.parent as? CommonPlayerViewController else { return false }
+        return CommonPlayerViewController.PipRecorder.shared.playingPipViewController.contains { $0 === container }
+    }
+
+    private func parkForBackground() {
+        guard Settings.acceleratorEnabled, !isInPictureInPicture,
+              let player = playerVC?.player, player.currentItem != nil
+        else { return }
+        let position = player.currentTime().seconds
+        guard position.isFinite else { return }
+        parked = (position, player.timeControlStatus != .paused)
+        currentPlaybackTime = position
+        player.pause()
+        player.replaceCurrentItem(with: nil)
+        Logger.info("[accelerator] unloaded the player at \(Int(position))s for the background")
+    }
+
+    @MainActor
+    private func unparkAfterBackground() async {
+        guard let parked else { return }
+        self.parked = nil
+        await withCheckedContinuation { continuation in
+            Accelerator.shared.whenProxyReady { continuation.resume() }
+        }
+        let position = parked.position
+        let wasPlaying = parked.playing
+
+        let commonVC = playerVC?.parent as? CommonPlayerViewController
+        commonVC?.autoPlayWhenReady = false
+        defer {
+            DispatchQueue.main.async {
+                commonVC?.autoPlayWhenReady = true
+            }
+        }
+        do {
+            let generation = beginLoadGeneration()
+            try await playmedia(urlInfo: playData.videoPlayURLInfo,
+                                playerInfo: playData.playerInfo,
+                                generation: generation,
+                                maxQuality: lastMaxQuality,
+                                streamIndex: lastStreamIndex,
+                                isQualitySwitch: true)
+            if let newPlayer = playerVC?.player {
+                await newPlayer.seek(to: CMTime(seconds: position, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+                if wasPlaying {
+                    newPlayer.play()
+                } else {
+                    newPlayer.pause()
+                }
+            }
+            Logger.info("[accelerator] rebuilt the player at \(Int(position))s after the background")
+        } catch {
+            Logger.warn("[accelerator] reload after background failed: \(error)")
+        }
     }
 
     /// 供 DebugPlugin 浮层显示的网络诊断信息
@@ -81,6 +165,7 @@ class BVideoPlayPlugin: NSObject, CommonPlayerPlugin {
     func playerDidLoad(playerVC: AVPlayerViewController) {
         self.playerVC = playerVC
         playerVC.player = nil
+        observeAppLifecycle()
         startLoad(urlInfo: playData.videoPlayURLInfo, playerInfo: playData.playerInfo)
     }
 
@@ -204,6 +289,9 @@ class BVideoPlayPlugin: NSObject, CommonPlayerPlugin {
     /// 只根据真实卡顿触发换源：正在 waiting，或本周期新增了 stall。
     /// 播放流畅时仅 observed < indicated 不触发——indicated 常是峰值，低一些完全正常。
     private func checkStallHealth(stallDelta: Int, buffered: Double, currentHost: String) {
+        // The accelerator rescues a stuck segment inside the proxy; rebuilding the player on top
+        // of that would throw the buffer away.
+        guard !Settings.acceleratorEnabled else { return }
         guard !isUserPaused, !isEvaluatingHostSwitch else {
             stallUnhealthyStreak = 0
             return
@@ -479,7 +567,10 @@ class BVideoPlayPlugin: NSObject, CommonPlayerPlugin {
         lastStreamIndex = streamIndex
 
         var resolvedHost = preferredHost
-        if resolvedHost == nil {
+        // With the accelerator on, a video starts on the host Bilibili assigned and moves only on
+        // measured evidence. A 256 KB read from byte 0 measures round-trip time and the cached
+        // head of the file, not throughput, and delays startup by one probe per host.
+        if resolvedHost == nil, !Settings.acceleratorEnabled {
             let candidates = primaryCDNCandidates(from: urlInfo, maxQuality: maxQuality, streamIndex: streamIndex)
             if let best = await CDNDiagnostics.pickFastestHost(urls: candidates) {
                 resolvedHost = best
@@ -573,7 +664,7 @@ class BVideoPlayPlugin: NSObject, CommonPlayerPlugin {
         playerVC.player = player
         // Muted players are feed previews; the report follows the video being watched.
         if Settings.acceleratorEnabled, !isMuted {
-            Accelerator.shared.attach(playerItem: playerItem)
+            Accelerator.shared.attach(playerItem: playerItem, player: player)
         }
     }
 }

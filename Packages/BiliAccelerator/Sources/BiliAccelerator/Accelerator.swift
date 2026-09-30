@@ -20,6 +20,16 @@ public final class Accelerator {
     private var port: UInt16?
     private var lastPlayer: PlayerProbe.Snapshot?
     private var snapshotCount = 0
+    private var lifecycle: [String] = []
+    private var needsRevive = false
+    private var reviving = false
+    private var reviveWaiters: [() -> Void] = []
+
+    static func clock() -> String {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withTime, .withColonSeparatorInTime, .withFractionalSeconds]
+        return formatter.string(from: Date())
+    }
 
     // Main thread.
     private let probe = PlayerProbe()
@@ -66,10 +76,27 @@ public final class Accelerator {
             }
         }
         #if canImport(UIKit)
+            // tvOS defuncts a suspended app's sockets, and the loopback listener keeps reporting
+            // ready while refusing every connection. While in the background the engine judges no
+            // host, and on return the listener is rebound on the same port.
+            NotificationCenter.default.addObserver(forName: UIApplication.didEnterBackgroundNotification,
+                                                   object: nil, queue: nil)
+            { [weak self] _ in
+                self?.queue.async {
+                    self?.proxy?.appActive = false
+                    self?.needsRevive = true
+                    self?.lifecycle.append("background \(Accelerator.clock())")
+                }
+            }
             NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification,
                                                    object: nil, queue: nil)
             { [weak self] _ in
-                self?.restartIfNeeded()
+                self?.queue.async {
+                    self?.proxy?.appActive = true
+                    self?.proxy?.resumedAt = Recorder.now()
+                    self?.lifecycle.append("active \(Accelerator.clock())")
+                    self?.revive()
+                }
             }
         #endif
     }
@@ -94,16 +121,16 @@ public final class Accelerator {
     public func proxyURL(for rep: MediaRep) -> URL? {
         guard isEnabled else { return nil }
         return queue.sync {
-            guard let port, server?.isListening == true else { return nil }
+            guard let server, server.isListening, server.stickyPort > 0 else { return nil }
             let token = registry.add(rep)
-            return URL(string: "http://127.0.0.1:\(port)/m/\(token).m4s")
+            return URL(string: "http://127.0.0.1:\(server.stickyPort)/m/\(token).m4s")
         }
     }
 
     /// Call on the main thread when a new player item starts. The engine reads the buffer from
     /// it to judge whether a slow fragment will arrive in time.
-    public func attach(playerItem: AVPlayerItem) {
-        probe.attach(playerItem)
+    public func attach(playerItem: AVPlayerItem, player: AVPlayer? = nil) {
+        probe.attach(playerItem, player: player)
         queue.async { self.recorder.beginSession() }
         snapshotTimer?.invalidate()
         snapshotTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
@@ -139,20 +166,61 @@ public final class Accelerator {
         }
     }
 
-    private func restartIfNeeded() {
+    /// Runs `completion` on the main queue once the proxy is serving again after the app returned
+    /// from the background, or at once when it never left. A player rebuilt before that would get
+    /// "could not connect" and give up on the address.
+    public func whenProxyReady(_ completion: @escaping () -> Void) {
         queue.async { [self] in
-            server?.restartIfNeeded { [self] bound in
-                if bound != port {
-                    Log.proxy.info("media proxy restarted on port \(bound ?? 0, privacy: .public)")
-                }
-                port = bound
+            guard needsRevive || reviving else {
+                DispatchQueue.main.async(execute: completion)
+                return
             }
+            reviveWaiters.append(completion)
+            revive()
+        }
+    }
+
+    private func revive() {
+        guard needsRevive, !reviving, let server else { return }
+        needsRevive = false
+        reviving = true
+        let deadline = DispatchWorkItem { [weak self] in
+            self?.finishRevive()
+        }
+        queue.asyncAfter(deadline: .now() + 1.5, execute: deadline)
+        server.forceRestart { [weak self] _ in
+            deadline.cancel()
+            self?.finishRevive()
+        }
+    }
+
+    private func finishRevive() {
+        guard reviving else { return }
+        reviving = false
+        let waiters = reviveWaiters
+        reviveWaiters = []
+        DispatchQueue.main.async {
+            waiters.forEach { $0() }
         }
     }
 
     private func report() -> [String: Any] {
-        Diagnostics.report(recorder: recorder, registry: registry, sessions: proxy.map { Array($0.sessions.values) } ?? [],
-                           player: lastPlayer, port: port, enabled: isEnabled)
+        var report = Diagnostics.report(recorder: recorder, registry: registry,
+                                        sessions: proxy.map { Array($0.sessions.values) } ?? [],
+                                        player: lastPlayer, port: port, enabled: isEnabled)
+        if let server {
+            let now = Recorder.now()
+            report["server"] = [
+                "listening": server.isListening,
+                "port": Int(server.stickyPort),
+                "accepted": server.accepted,
+                "restarts": server.restarts,
+                "appActive": proxy?.appActive ?? true,
+                "lifecycle": Array(lifecycle.suffix(6)),
+                "events": server.events.suffix(10).map { "\(String(format: "%.0f", now - $0.at))s ago: \($0.text)" },
+            ] as [String: Any]
+        }
+        return report
     }
 
     private func writeDiagnosticsFile() {

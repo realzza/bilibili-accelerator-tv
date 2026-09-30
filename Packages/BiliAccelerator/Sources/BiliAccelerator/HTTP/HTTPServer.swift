@@ -11,7 +11,16 @@ final class HTTPServer {
     private var listener: NWListener?
     private var connections: [ObjectIdentifier: HTTPConnection] = [:]
     private var localOnly = true
+    private var stopped = false
+    private var restartScheduled = false
+    /// The port currently listened on; nil while down.
     private(set) var port: UInt16?
+    /// The first port bound. Playlists already handed to AVPlayer carry it, so a restart after the
+    /// system tore the listener down has to come back on the same one.
+    private(set) var stickyPort: UInt16 = 0
+    private(set) var accepted = 0
+    private(set) var restarts = 0
+    private(set) var events: [(at: TimeInterval, text: String)] = []
 
     init(queue: DispatchQueue, handler: @escaping Handler) {
         self.queue = queue
@@ -26,6 +35,7 @@ final class HTTPServer {
     /// Port 0 asks the system for a free one.
     func start(port: UInt16 = 0, localOnly: Bool, completion: @escaping (UInt16?) -> Void) {
         self.localOnly = localOnly
+        stopped = false
         let parameters = NWParameters.tcp
         parameters.allowLocalEndpointReuse = true
         parameters.acceptLocalOnly = localOnly
@@ -34,32 +44,38 @@ final class HTTPServer {
         do {
             listener = try NWListener(using: parameters, on: requested)
         } catch {
-            Log.proxy.error("listener init failed: \(error.localizedDescription, privacy: .public)")
+            note("init failed: \(error.localizedDescription)")
             queue.async { completion(nil) }
+            scheduleRestart()
             return
         }
 
         var reported = false
         listener.stateUpdateHandler = { [weak self, weak listener] state in
+            guard let self, let listener, listener === self.listener else { return }
             switch state {
             case .ready:
-                let bound = listener?.port?.rawValue
-                self?.port = bound
+                let bound = listener.port?.rawValue
+                self.port = bound
+                if self.stickyPort == 0, let bound {
+                    self.stickyPort = bound
+                }
+                self.note("ready \(bound ?? 0)")
                 if !reported {
                     reported = true
                     completion(bound)
                 }
             case let .failed(error):
-                Log.proxy.error("listener failed: \(error.localizedDescription, privacy: .public)")
-                listener?.cancel()
-                if self?.listener === listener {
-                    self?.listener = nil
-                    self?.port = nil
-                }
+                self.note("failed: \(error.localizedDescription)")
+                self.teardown(listener)
                 if !reported {
                     reported = true
                     completion(nil)
                 }
+            case .cancelled:
+                // Cancelled by the system rather than by `stop()` or a teardown of ours.
+                self.note("cancelled")
+                self.teardown(listener)
             default:
                 break
             }
@@ -71,30 +87,87 @@ final class HTTPServer {
         listener.start(queue: queue)
     }
 
-    /// Starts again on the same port after the system tore the listener down, which happens
-    /// when a tvOS app is suspended. Playlists already handed to AVPlayer carry that port.
+    /// Starts again on the sticky port if the listener is down, which happens when a tvOS app is
+    /// suspended and its sockets are defuncted.
     func restartIfNeeded(completion: @escaping (UInt16?) -> Void) {
-        guard !isListening else {
+        guard !isListening, !stopped else {
             completion(port)
             return
         }
-        let previous = port ?? 0
+        restarts += 1
+        note("restart on \(stickyPort)")
         listener?.cancel()
         listener = nil
-        start(port: previous, localOnly: localOnly, completion: completion)
+        start(port: stickyPort, localOnly: localOnly, completion: completion)
+    }
+
+    /// Rebinds the sticky port unconditionally. After a tvOS app returns from the background its
+    /// loopback listener can still report `ready` while refusing every connection: the socket was
+    /// defuncted during the suspension and Network.framework doesn't say so.
+    func forceRestart(completion: @escaping (UInt16?) -> Void) {
+        guard !stopped else {
+            completion(port)
+            return
+        }
+        restarts += 1
+        note("forced restart on \(stickyPort)")
+        let old = listener
+        listener = nil
+        port = nil
+        old?.cancel()
+        for connection in connections.values {
+            connection.close()
+        }
+        connections.removeAll()
+        start(port: stickyPort, localOnly: localOnly, completion: completion)
     }
 
     func stop() {
-        listener?.cancel()
+        stopped = true
+        let old = listener
         listener = nil
         port = nil
+        old?.cancel()
         for connection in connections.values {
             connection.close()
         }
         connections.removeAll()
     }
 
+    /// What the system does to a suspended app's listener, for tests.
+    func simulateSystemCancel() {
+        listener?.cancel()
+    }
+
+    private func teardown(_ failed: NWListener) {
+        listener = nil
+        port = nil
+        failed.cancel()
+        scheduleRestart()
+    }
+
+    /// Retries every half second until the listener is back. While the app is suspended the queue
+    /// doesn't run, so the retry happens on resume.
+    private func scheduleRestart() {
+        guard !stopped, !restartScheduled else { return }
+        restartScheduled = true
+        queue.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            guard let self else { return }
+            self.restartScheduled = false
+            self.restartIfNeeded { _ in }
+        }
+    }
+
+    private func note(_ text: String) {
+        Log.proxy.info("server: \(text, privacy: .public)")
+        events.append((Recorder.now(), text))
+        if events.count > 20 {
+            events.removeFirst(events.count - 20)
+        }
+    }
+
     private func accept(_ nwConnection: NWConnection) {
+        accepted += 1
         let connection = HTTPConnection(connection: nwConnection, queue: queue, handler: handler)
         let key = ObjectIdentifier(connection)
         connections[key] = connection

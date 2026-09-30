@@ -60,6 +60,12 @@ final class HTTPMessageTests: XCTestCase {
         XCTAssertNil(MediaProxy.token(from: "/debug"))
     }
 
+    func testReportWithAnUnencodableValueDoesNotCrash() {
+        let data = Diagnostics.json(["slice": [1, 2, 3].suffix(2)])
+        XCTAssertEqual(String(decoding: data, as: UTF8.self), #"{"error":"report not encodable"}"#)
+        XCTAssertFalse(Diagnostics.json(["ok": [1, 2]]).isEmpty)
+    }
+
     func testMediaKindFromID() {
         XCTAssertEqual(MediaRep.kind(forID: 30280), .audio)
         XCTAssertEqual(MediaRep.kind(forID: 30251), .audio)

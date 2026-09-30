@@ -168,6 +168,19 @@ final class ProxyEndToEndTests: XCTestCase {
         XCTAssertFalse(loser.failed)
     }
 
+    func testComesBackOnTheSamePortAfterTheSystemTearsTheListenerDown() throws {
+        let port = proxyPort
+        queue.sync { proxyServer.simulateSystemCancel() }
+        let deadline = Date().addingTimeInterval(5)
+        while Date() < deadline, !queue.sync(execute: { proxyServer.isListening && proxyServer.restarts > 0 }) {
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+        XCTAssertTrue(queue.sync { proxyServer.isListening })
+        XCTAssertEqual(queue.sync { proxyServer.port }, port)
+        let (body, _) = try fetch([cdn(0, "r")], range: "bytes=0-9999")
+        XCTAssertEqual(body, blob.subdata(in: 0..<10000))
+    }
+
     func testCancelsTheCDNRequestWhenThePlayerHangsUp() throws {
         var request = try URLRequest(url: register([cdn(0, "h", "slow=1")]))
         request.setValue("bytes=0-4999999", forHTTPHeaderField: "Range")

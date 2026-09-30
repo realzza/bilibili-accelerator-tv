@@ -29,6 +29,11 @@ enum Diagnostics {
             if let indicated = player.indicatedMbps {
                 state["indicatedMbps"] = round2(indicated)
             }
+            state["itemStatus"] = player.itemStatus
+            state["itemError"] = player.itemError ?? NSNull()
+            state["lastErrorLog"] = player.lastErrorLog ?? NSNull()
+            state["timeControl"] = player.timeControl ?? NSNull()
+            state["waitingReason"] = player.waitingReason ?? NSNull()
             report["player"] = state
         }
         report["hosts"] = hostSummaries(recorder: recorder)
@@ -78,8 +83,14 @@ enum Diagnostics {
         return report
     }
 
+    /// JSONSerialization raises an Objective-C exception, which `try?` doesn't catch, for a value
+    /// it can't encode (an ArraySlice, say), so the report is checked first.
     static func json(_ object: [String: Any]) -> Data {
-        (try? JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])) ?? Data("{}".utf8)
+        guard JSONSerialization.isValidJSONObject(object) else {
+            Log.proxy.error("diagnostics report is not valid JSON")
+            return Data(#"{"error":"report not encodable"}"#.utf8)
+        }
+        return (try? JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])) ?? Data("{}".utf8)
     }
 
     private static func hostSummaries(recorder: Recorder) -> [String: Any] {
