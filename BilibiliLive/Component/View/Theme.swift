@@ -34,13 +34,14 @@ enum Theme {
 
 extension UIButton.Configuration {
     /// The capsule buttons of the redesign: Liquid Glass on tvOS 26 and later, the system
-    /// platter before that. tvOS draws the focused state itself.
-    static func capsule(primary: Bool = false) -> UIButton.Configuration {
+    /// platter before that. tvOS draws the focused state itself. Every button uses the same
+    /// style: a prominent one is as light at rest as a focused one, so focus would be unclear.
+    static func capsule() -> UIButton.Configuration {
         var config: UIButton.Configuration
         if #available(tvOS 26.0, *) {
-            config = primary ? .prominentGlass() : .glass()
+            config = .glass()
         } else {
-            config = primary ? .filled() : .bordered()
+            config = .bordered()
         }
         config.cornerStyle = .capsule
         return config

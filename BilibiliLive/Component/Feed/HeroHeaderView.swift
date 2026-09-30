@@ -15,9 +15,9 @@ final class HeroHeaderView: UICollectionReusableView {
     var onDetail: (() -> Void)?
     var onUpSpace: (() -> Void)?
 
-    let playButton = HeroHeaderView.makeButton(title: "播放", symbol: "play.fill", primary: true)
-    private let detailButton = HeroHeaderView.makeButton(title: "详情", symbol: "info.circle", primary: false)
-    private let upButton = HeroHeaderView.makeButton(title: "UP 主页", symbol: "person.crop.circle", primary: false)
+    let playButton = HeroHeaderView.makeButton(title: "播放", symbol: "play.fill")
+    private let detailButton = HeroHeaderView.makeButton(title: "详情", symbol: "info.circle")
+    private let upButton = HeroHeaderView.makeButton(title: "UP 主页", symbol: "person.crop.circle")
     private let backdrop = BackdropView()
     private let kickerLabel = UILabel()
     private let titleLabel = UILabel()
@@ -97,8 +97,8 @@ final class HeroHeaderView: UICollectionReusableView {
         }
     }
 
-    private static func makeButton(title: String, symbol: String, primary: Bool) -> UIButton {
-        var config = UIButton.Configuration.capsule(primary: primary)
+    private static func makeButton(title: String, symbol: String) -> UIButton {
+        var config = UIButton.Configuration.capsule()
         config.title = title
         config.image = UIImage(systemName: symbol)
         config.imagePadding = 12

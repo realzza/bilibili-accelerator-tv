@@ -19,7 +19,7 @@ final class VideoDetailHeaderView: UIView {
     let followersLabel = UILabel()
     let statsLabel = UILabel()
     let noteView = NoteDetailView()
-    let playButton = UIButton(configuration: .capsule(primary: true))
+    let playButton = UIButton(configuration: .capsule())
     let likeButton = DetailActionButton(symbol: "hand.thumbsup", onSymbol: "hand.thumbsup.fill", title: "点赞")
     let coinButton = DetailActionButton(symbol: "bitcoinsign.circle", onSymbol: "bitcoinsign.circle.fill", title: "投币")
     let favButton = DetailActionButton(symbol: "star", onSymbol: "star.fill", title: "收藏")
