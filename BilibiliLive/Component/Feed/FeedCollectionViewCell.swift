@@ -120,9 +120,24 @@ class FeedCollectionViewCell: BLMotionCollectionViewCell {
         }
         parts += facts.others
         if let date = data.date, !date.isEmpty {
-            parts.append(date)
+            parts.append(shortDate(date))
         }
         return parts.joined(separator: " · ")
+    }
+
+    private static let yearFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter
+    }()
+
+    /// `9月30日` for a `2026-09-30` in the current year, so the line has room for the rest.
+    static func shortDate(_ text: String) -> String {
+        guard let date = yearFormatter.date(from: text),
+              Calendar.current.isDate(date, equalTo: Date(), toGranularity: .year)
+        else { return text }
+        let components = Calendar.current.dateComponents([.month, .day], from: date)
+        return "\(components.month ?? 0)月\(components.day ?? 0)日"
     }
 
     override func didUpdateFocus(in context: UIFocusUpdateContext, with coordinator: UIFocusAnimationCoordinator) {
