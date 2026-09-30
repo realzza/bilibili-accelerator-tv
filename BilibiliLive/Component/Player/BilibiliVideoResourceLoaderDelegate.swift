@@ -8,6 +8,7 @@
 
 import Alamofire
 import AVFoundation
+import BiliAccelerator
 import Swifter
 import SwiftyJSON
 import UIKit
@@ -202,6 +203,7 @@ class BilibiliVideoResourceLoaderDelegate: NSObject, AVAssetResourceLoaderDelega
         let segment = sidxResult.sidx
         let segmentURL = sidxResult.url
         currentSegmentHost = URLComponents(string: segmentURL)?.host
+        let mediaURL = acceleratedURL(for: info.info, playing: segmentURL) ?? segmentURL
         var playList = """
         #EXTM3U
         #EXT-X-VERSION:7
@@ -209,7 +211,7 @@ class BilibiliVideoResourceLoaderDelegate: NSObject, AVAssetResourceLoaderDelega
         #EXT-X-MEDIA-SEQUENCE:1
         #EXT-X-INDEPENDENT-SEGMENTS
         #EXT-X-PLAYLIST-TYPE:VOD
-        #EXT-X-MAP:URI="\(segmentURL)",BYTERANGE="\(moovIdx + 1)@\(moovOffset)"
+        #EXT-X-MAP:URI="\(mediaURL)",BYTERANGE="\(moovIdx + 1)@\(moovOffset)"
 
         """
         offset += 1
@@ -217,7 +219,7 @@ class BilibiliVideoResourceLoaderDelegate: NSObject, AVAssetResourceLoaderDelega
             let segStr = """
             #EXTINF:\(Double(segInfo.duration) / Double(segment.timescale)),
             #EXT-X-BYTERANGE:\(segInfo.size)@\(offset)
-            \(segmentURL)
+            \(mediaURL)
 
             """
             playList.append(segStr)
@@ -227,6 +229,20 @@ class BilibiliVideoResourceLoaderDelegate: NSObject, AVAssetResourceLoaderDelega
         playList.append("\n#EXT-X-ENDLIST")
 
         return playList
+    }
+
+    /// The loopback accelerator URL for this representation, or nil to play the CDN URL directly.
+    /// The accelerator fetches the same byte ranges from `url` and measures each request.
+    private func acceleratedURL(for media: VideoPlayURLInfo.DashInfo.DashMediaInfo, playing url: String) -> String? {
+        guard Settings.acceleratorEnabled, let preferred = URL(string: url) else { return nil }
+        let rep = MediaRep(kind: MediaRep.kind(forID: media.id),
+                           id: media.id,
+                           bandwidth: media.bandwidth,
+                           codecs: media.codecs,
+                           urls: media.playableURLs.compactMap { URL(string: $0) },
+                           preferred: preferred,
+                           referer: Keys.referer(for: aid))
+        return Accelerator.shared.proxyURL(for: rep)?.absoluteString
     }
 
     private func addAudioPlayBackInfo(info: VideoPlayURLInfo.DashInfo.DashMediaInfo, url: String, duration: Int) {

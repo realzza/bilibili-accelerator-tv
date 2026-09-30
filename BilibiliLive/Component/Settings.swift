@@ -66,6 +66,10 @@ enum Settings {
     @UserDefault("Settings.loadHighestVideoOnly", defaultValue: false)
     static var loadHighestVideoOnly: Bool
 
+    /// Load video through the loopback accelerator instead of straight from the CDN.
+    @UserDefault("Settings.acceleratorEnabled", defaultValue: true)
+    static var acceleratorEnabled: Bool
+
     @UserDefault("Settings.contentMatch", defaultValue: true)
     static var contentMatch: Bool
 

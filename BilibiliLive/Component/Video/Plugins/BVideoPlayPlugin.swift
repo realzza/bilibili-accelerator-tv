@@ -6,6 +6,7 @@
 //
 
 import AVKit
+import BiliAccelerator
 import UIKit
 
 class BVideoPlayPlugin: NSObject, CommonPlayerPlugin {
@@ -95,6 +96,9 @@ class BVideoPlayPlugin: NSObject, CommonPlayerPlugin {
 
     func playerDidCleanUp(player: AVPlayer) {
         stopNetworkLogging()
+        if !isMuted {
+            Accelerator.shared.detach()
+        }
         player.pause()
         player.replaceCurrentItem(with: nil)
     }
@@ -567,5 +571,9 @@ class BVideoPlayPlugin: NSObject, CommonPlayerPlugin {
             return
         }
         playerVC.player = player
+        // Muted players are feed previews; the report follows the video being watched.
+        if Settings.acceleratorEnabled, !isMuted {
+            Accelerator.shared.attach(playerItem: playerItem)
+        }
     }
 }
