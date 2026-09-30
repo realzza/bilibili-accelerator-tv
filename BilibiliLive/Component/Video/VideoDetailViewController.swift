@@ -84,6 +84,7 @@ class VideoDetailViewController: UIViewController {
     private var allUgcEpisodes = [VideoDetail.Info.UgcSeason.UgcVideoInfo]()
 
     private var subscriptions = [AnyCancellable]()
+    private var isFocusInHeader = false
 
     static func create(aid: Int, cid: Int?, epid: Int? = nil) -> VideoDetailViewController {
         let vc = UIStoryboard(name: "Main", bundle: .main).instantiateViewController(identifier: String(describing: self)) as! VideoDetailViewController
@@ -139,10 +140,10 @@ class VideoDetailViewController: UIViewController {
             make.width.equalToSuperview().multipliedBy(2.0 / 3)
             make.height.equalTo(backdrop.snp.width).multipliedBy(9.0 / 16)
         }
-        // tvOS scrolls about 90 pt to bring 播放 toward the middle, so dimming starts past that.
         scrollView.publisher(for: \.contentOffset).sink { [weak self] offset in
             self?.backdrop.alpha = 1 - min(max((offset.y - 120) / 400, 0), 1)
         }.store(in: &subscriptions)
+        scrollView.delegate = self
 
         contentStackView.insertArrangedSubview(header, at: 0)
         header.playButton.addAction(UIAction { [weak self] _ in self?.actionPlay() }, for: .primaryActionTriggered)
@@ -611,6 +612,20 @@ class VideoDetailViewController: UIViewController {
 }
 
 extension VideoDetailViewController: UICollectionViewDelegate {
+    override func didUpdateFocus(in context: UIFocusUpdateContext, with coordinator: UIFocusAnimationCoordinator) {
+        super.didUpdateFocus(in: context, with: coordinator)
+        isFocusInHeader = context.nextFocusedView?.isDescendant(of: header) ?? false
+    }
+
+    /// tvOS scrolls the page to bring a focused button toward the middle, which pushed the title
+    /// against the top edge. While focus is in the header, the page stays at the top.
+    func scrollViewWillEndDragging(_ scrollView: UIScrollView, withVelocity velocity: CGPoint,
+                                   targetContentOffset: UnsafeMutablePointer<CGPoint>)
+    {
+        guard scrollView === self.scrollView, isFocusInHeader else { return }
+        targetContentOffset.pointee.y = 0
+    }
+
     func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
         switch collectionView {
         case pageRangeCollectionView:
