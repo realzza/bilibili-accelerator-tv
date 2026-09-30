@@ -48,8 +48,10 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         /// Commands from the accelerator's debug server, for driving tests from a Mac:
         /// `play?aid=&cid=` (or `epid=`), `detail?aid=&cid=`, `stop`, `home` (the tab bar, even when
         /// signed out), `tab?index=`, `quality?qn=`, `seek?to=<fraction of the duration>`, `accel?on=0|1`,
-        /// `route` (the 线路 tab on its own), `routetest` (its test button) and `focus?x=&y=` (focus
-        /// what is at that point).
+        /// `route` (the 线路 tab on its own), `routetest` (its test button), `focus?x=&y=` (focus
+        /// what is at that point), `select` (press what has focus), `probe?class=&match=` (log a
+        /// class's methods) and `call?sel=&arg=` (send one to the player, such as
+        /// `displayInfoViewControllerWithIdentifier:` with `arg=线路` to open the info panel there).
         private static func handleDebugCommand(_ command: String, _ parameters: [String: String]) {
             switch command {
             case "seek":
@@ -117,6 +119,52 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
                 // controller prefers the target for one focus update.
                 let controller = UIViewController.topMostViewController()
                 DebugFocus.prefer(target, in: controller)
+            case "select":
+                // Presses the focused item, as the remote's select button would.
+                guard let window = AppDelegate.shared.window,
+                      let focused = UIFocusSystem.focusSystem(for: window)?.focusedItem as? UIView
+                else { return }
+                if let control = focused as? UIControl {
+                    control.sendActions(for: .primaryActionTriggered)
+                } else if let cell = focused as? UICollectionViewCell {
+                    var ancestor = cell.superview
+                    while let view = ancestor, !(view is UICollectionView) {
+                        ancestor = view.superview
+                    }
+                    guard let collectionView = ancestor as? UICollectionView,
+                          let indexPath = collectionView.indexPath(for: cell) else { return }
+                    collectionView.selectItem(at: indexPath, animated: false, scrollPosition: [])
+                    collectionView.delegate?.collectionView?(collectionView, didSelectItemAt: indexPath)
+                }
+            case "probe":
+                // Logs the methods of a class whose names contain `match`, for finding test hooks.
+                guard let name = parameters["class"], let cls = NSClassFromString(name) else { return }
+                let match = parameters["match"]?.lowercased() ?? ""
+                var count: UInt32 = 0
+                guard let methods = class_copyMethodList(cls, &count) else { return }
+                defer { free(methods) }
+                let names = (0..<Int(count)).map { NSStringFromSelector(method_getName(methods[$0])) }
+                    .filter { match.isEmpty || $0.lowercased().contains(match) }
+                NSLog("probe %@ %@: %@", name, match, names.sorted().joined(separator: " "))
+            case "call":
+                // Sends a selector, with `arg` as its one argument if given, to the playing AVPlayerViewController.
+                guard let name = parameters["sel"] else { return }
+                var pending = [UIViewController.topMostViewController()]
+                while let controller = pending.popLast() {
+                    if let playerVC = controller as? AVPlayerViewController {
+                        let selector = NSSelectorFromString(name)
+                        NSLog("call %@ responds=%d", name, playerVC.responds(to: selector) ? 1 : 0)
+                        if playerVC.responds(to: selector) {
+                            if let argument = parameters["arg"] {
+                                playerVC.perform(selector, with: argument)
+                            } else {
+                                playerVC.perform(selector)
+                            }
+                        }
+                        return
+                    }
+                    pending += controller.children
+                }
             case "accel":
                 let on = parameters["on"] != "0"
                 Settings.acceleratorEnabled = on
