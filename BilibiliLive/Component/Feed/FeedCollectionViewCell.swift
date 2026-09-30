@@ -10,112 +10,119 @@ import MarqueeLabel
 import TVUIKit
 import UIKit
 
+/// A video card: a clean 16:9 thumbnail with only the duration on it, a one-line title that
+/// scrolls when focused, and one line of metadata below.
 class FeedCollectionViewCell: BLMotionCollectionViewCell {
     var onLongPress: (() -> Void)?
     var styleOverride: FeedDisplayStyle? { didSet { if oldValue != styleOverride { updateStyle() } }}
 
     private let titleLabel = MarqueeLabel()
-    private let upLabel = UILabel()
+    private let metaLabel = UILabel()
+    private let artwork = UIView()
     private let imageView = UIImageView()
-    private let infoView = UIView()
-    private let avatarView = UIImageView()
-    private let overlayView = BLOverlayView()
+    private let durationLabel = PillLabel()
+    private let badgeLabel = PillLabel()
+
+    override var shadowLayer: CALayer {
+        artwork.layer
+    }
 
     override func setup() {
         super.setup()
+        scaleFactor = 1.08
         let longpress = UILongPressGestureRecognizer(target: self, action: #selector(actionLongPress(sender:)))
         addGestureRecognizer(longpress)
 
-        contentView.addSubview(imageView)
-        imageView.snp.makeConstraints { make in
-            make.leading.equalToSuperview()
-            make.trailing.equalToSuperview()
-            make.top.equalToSuperview()
-            make.height.equalTo(imageView.snp.width).multipliedBy(9.0 / 16)
+        contentView.addSubview(artwork)
+        artwork.snp.makeConstraints { make in
+            make.leading.trailing.top.equalToSuperview()
+            make.height.equalTo(artwork.snp.width).multipliedBy(9.0 / 16)
         }
-        imageView.layer.cornerRadius = 12
+        artwork.addSubview(imageView)
+        imageView.snp.makeConstraints { make in
+            make.edges.equalToSuperview()
+        }
+        imageView.layer.cornerRadius = Theme.cardRadius
+        imageView.layer.cornerCurve = .continuous
         imageView.clipsToBounds = true
         imageView.contentMode = .scaleAspectFill
+        imageView.backgroundColor = UIColor(white: 1, alpha: 0.06)
 
-        contentView.addSubview(overlayView)
-        overlayView.snp.makeConstraints { make in
-            make.leading.equalTo(imageView.snp.leading)
-            make.trailing.equalTo(imageView.snp.trailing)
-            make.bottom.equalTo(imageView.snp.bottom)
-            make.top.equalTo(imageView.snp.top)
+        artwork.addSubview(durationLabel)
+        durationLabel.snp.makeConstraints { make in
+            make.trailing.bottom.equalToSuperview().inset(12)
         }
-        overlayView.layer.cornerRadius = imageView.layer.cornerRadius
-        overlayView.clipsToBounds = true
+        durationLabel.font = .systemFont(ofSize: 20, weight: .semibold)
+        durationLabel.textColor = Theme.textPrimary
+        durationLabel.backgroundColor = Theme.badgeFill
+        durationLabel.layer.cornerRadius = 10
+        durationLabel.clipsToBounds = true
 
-        contentView.addSubview(infoView)
-        infoView.snp.makeConstraints { make in
-            make.leading.trailing.bottom.equalToSuperview()
-            make.top.equalTo(imageView.snp.bottom).offset(8)
+        artwork.addSubview(badgeLabel)
+        badgeLabel.snp.makeConstraints { make in
+            make.leading.top.equalToSuperview().inset(12)
         }
+        badgeLabel.font = .systemFont(ofSize: 18, weight: .bold)
+        badgeLabel.textColor = Theme.onAccent
+        badgeLabel.layer.cornerRadius = 10
+        badgeLabel.clipsToBounds = true
 
-        let hStackView = UIStackView()
-        let stackView = UIStackView()
-        infoView.addSubview(hStackView)
-        hStackView.addArrangedSubview(avatarView)
-        hStackView.addArrangedSubview(stackView)
-        hStackView.snp.makeConstraints { make in
-            make.top.leading.trailing.equalToSuperview()
-            make.bottom.equalToSuperview().priority(.high)
-            make.height.equalTo(stackView.snp.height)
-        }
-
-        hStackView.alignment = .top
-        hStackView.spacing = 10
-        avatarView.backgroundColor = .clear
-        avatarView.snp.makeConstraints { make in
-            make.width.equalTo(avatarView.snp.height)
-            make.height.equalTo(stackView.snp.height).multipliedBy(0.7)
-        }
-        stackView.setContentHuggingPriority(.required, for: .vertical)
-        avatarView.setContentHuggingPriority(.defaultLow, for: .vertical)
-        avatarView.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        avatarView.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
-        avatarView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-
+        let stackView = UIStackView(arrangedSubviews: [titleLabel, metaLabel])
         stackView.axis = .vertical
-        stackView.addArrangedSubview(titleLabel)
-        stackView.addArrangedSubview(upLabel)
-        stackView.alignment = .leading
+        stackView.alignment = .fill
         stackView.spacing = 6
-        stackView.setContentHuggingPriority(.required, for: .vertical)
+        contentView.addSubview(stackView)
+        stackView.snp.makeConstraints { make in
+            make.top.equalTo(artwork.snp.bottom).offset(14)
+            make.leading.trailing.equalToSuperview()
+            make.bottom.equalToSuperview().priority(.high)
+        }
+        titleLabel.textColor = Theme.textPrimary
         titleLabel.holdScrolling = true
-        titleLabel.setContentHuggingPriority(.required, for: .vertical)
+        titleLabel.fadeLength = 40
         titleLabel.setContentCompressionResistancePriority(.required, for: .vertical)
-        titleLabel.fadeLength = 60
-        upLabel.setContentHuggingPriority(.required, for: .vertical)
-        upLabel.setContentCompressionResistancePriority(.required, for: .vertical)
-        upLabel.textColor = UIColor(named: "titleColor")
-        upLabel.adjustsFontSizeToFitWidth = true
-        upLabel.minimumScaleFactor = 0.1
+        metaLabel.textColor = Theme.textTertiary
+        metaLabel.lineBreakMode = .byTruncatingTail
+        metaLabel.setContentCompressionResistancePriority(.required, for: .vertical)
     }
 
     func setup(data: any DisplayData) {
         titleLabel.text = data.title
-        if let overlay = data.overlay {
-            overlayView.isHidden = false
-            overlayView.configure(overlay)
+        metaLabel.text = Self.metaText(for: data)
+        let duration = CardFacts(overlay: data.overlay).duration
+        durationLabel.text = duration
+        durationLabel.isHidden = (duration ?? "").isEmpty
+        if let badge = data.overlay?.badge, !badge.text.isEmpty {
+            badgeLabel.text = badge.text
+            badgeLabel.backgroundColor = badge.color ?? Theme.accent
+            badgeLabel.isHidden = false
         } else {
-            overlayView.isHidden = true
+            badgeLabel.isHidden = true
         }
-        upLabel.text = [data.ownerName, data.date].compactMap({ $0 }).joined(separator: " · ")
         if var pic = data.pic {
             if pic.scheme == nil {
                 pic = URL(string: "http:\(pic.absoluteString)")!
             }
-            imageView.kf.setImage(with: pic, options: [.processor(DownsamplingImageProcessor(size: CGSize(width: 360, height: 202))), .cacheOriginalImage])
-        }
-        if let avatar = data.avatar(size: 240) {
-            avatarView.isHidden = false
-            avatarView.kf.setImage(with: avatar, options: [.processor(DownsamplingImageProcessor(size: CGSize(width: 80, height: 80))), .processor(RoundCornerImageProcessor(radius: .widthFraction(0.5))), .cacheSerializer(FormatIndicatedCacheSerializer.png)])
-        } else {
-            avatarView.isHidden = true
+            imageView.kf.setImage(with: pic, options: [.processor(DownsamplingImageProcessor(size: CGSize(width: 480, height: 270))), .cacheOriginalImage])
         }
         updateStyle()
+    }
+
+    /// Up name, views and category or area on one line. Danmaku counts stay off the card.
+    static func metaText(for data: any DisplayData) -> String {
+        let facts = CardFacts(overlay: data.overlay)
+        var parts = [String]()
+        if !data.ownerName.isEmpty {
+            parts.append(data.ownerName)
+        }
+        if let views = facts.views {
+            parts.append(views)
+        }
+        parts += facts.others
+        if let date = data.date, !date.isEmpty {
+            parts.append(date)
+        }
+        return parts.joined(separator: " · ")
     }
 
     override func didUpdateFocus(in context: UIFocusUpdateContext, with coordinator: UIFocusAnimationCoordinator) {
@@ -140,7 +147,7 @@ class FeedCollectionViewCell: BLMotionCollectionViewCell {
     private func updateStyle() {
         let style = styleOverride ?? Settings.displayStyle
         titleLabel.font = style.titleFont
-        upLabel.font = style.upFont
+        metaLabel.font = style.upFont
     }
 
     @objc private func actionLongPress(sender: UILongPressGestureRecognizer) {
@@ -151,7 +158,8 @@ class FeedCollectionViewCell: BLMotionCollectionViewCell {
     override func prepareForReuse() {
         super.prepareForReuse()
         onLongPress = nil
-        avatarView.image = nil
+        imageView.kf.cancelDownloadTask()
+        imageView.image = nil
         stopScroll()
     }
 }
@@ -180,31 +188,68 @@ extension FeedDisplayStyle {
     var heightEstimated: CGFloat {
         switch self {
         case .large:
-            return 516
+            return 460
         case .normal, .sideBar:
-            return 380
+            return 340
         }
     }
 
     var titleFont: UIFont {
         switch self {
         case .large:
-            return UIFont.preferredFont(forTextStyle: .headline)
+            return .systemFont(ofSize: 32, weight: .semibold)
         case .normal:
-            return UIFont.systemFont(ofSize: 30, weight: .semibold)
+            return .systemFont(ofSize: 28, weight: .semibold)
         case .sideBar:
-            return UIFont.systemFont(ofSize: 26, weight: .semibold)
+            return .systemFont(ofSize: 24, weight: .semibold)
         }
     }
 
     var upFont: UIFont {
         switch self {
         case .large:
-            return UIFont.preferredFont(forTextStyle: .footnote)
+            return .systemFont(ofSize: 24)
         case .normal:
-            return UIFont.systemFont(ofSize: 24)
+            return .systemFont(ofSize: 22)
         case .sideBar:
-            return UIFont.systemFont(ofSize: 20, weight: .semibold)
+            return .systemFont(ofSize: 20)
         }
+    }
+}
+
+/// What an overlay says, read from the text itself. Feeds disagree on which slot and icon carry
+/// which value: the app's recommend feed puts the duration first under a play icon and the views
+/// under the danmaku icon, while the web feeds put the duration on the right.
+struct CardFacts {
+    var duration: String?
+    var views: String?
+    var others: [String] = []
+
+    init(overlay: DisplayOverlay?) {
+        guard let overlay else { return }
+        for item in overlay.rightItems + overlay.leftItems {
+            let text = item.text.trimmingCharacters(in: .whitespaces)
+            guard !text.isEmpty, text != "-" else { continue }
+            if duration == nil, CardFacts.isDuration(text) {
+                duration = text
+            } else if text.hasSuffix("弹幕") || (item.icon == "list.bullet.rectangle" && CardFacts.isCount(text)) {
+                continue
+            } else if views == nil, text.hasSuffix("观看") || text.hasSuffix("播放") {
+                views = text
+            } else if views == nil, item.icon == "play.rectangle", CardFacts.isCount(text) {
+                views = "\(text)播放"
+            } else if item.icon == nil {
+                others.append(text)
+            }
+        }
+    }
+
+    /// `3:34`, `1:07:07`, or watch progress such as `12:05/48:19`.
+    static func isDuration(_ text: String) -> Bool {
+        text.range(of: #"^\d{1,3}:\d{2}(:\d{2})?(/\d{1,3}:\d{2}(:\d{2})?)?$"#, options: .regularExpression) != nil
+    }
+
+    static func isCount(_ text: String) -> Bool {
+        text.range(of: #"^[0-9.]+[万亿]?$"#, options: .regularExpression) != nil
     }
 }

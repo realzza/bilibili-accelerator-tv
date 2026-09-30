@@ -12,6 +12,13 @@ class BLMotionCollectionViewCell: UICollectionViewCell {
     private var motionEffectV: UIInterpolatingMotionEffect!
     private var motionEffectH: UIInterpolatingMotionEffect!
     var scaleFactor: CGFloat = 1.1
+
+    /// The layer that casts the focus shadow. Cards override it so only the artwork casts one,
+    /// not the text under it.
+    var shadowLayer: CALayer {
+        layer
+    }
+
     override init(frame: CGRect) {
         super.init(frame: frame)
         setup()
@@ -49,17 +56,19 @@ class BLMotionCollectionViewCell: UICollectionViewCell {
     }
 
     func updateTransform() {
+        let shadow = shadowLayer
         if isFocused {
             transform = CGAffineTransformMakeScale(scaleFactor, scaleFactor)
             let scaleDiff = (bounds.size.height * scaleFactor - bounds.size.height) / 2
             transform = CGAffineTransformTranslate(transform, 0, -scaleDiff)
-            layer.shadowOffset = CGSizeMake(0, 16)
-            layer.shadowOpacity = 0.2
-            layer.shadowRadius = 18.0
+            shadow.shadowColor = UIColor.black.cgColor
+            shadow.shadowOffset = CGSizeMake(0, 22)
+            shadow.shadowOpacity = 0.45
+            shadow.shadowRadius = 26
         } else {
             transform = CGAffineTransformIdentity
-            layer.shadowOpacity = 0
-            layer.shadowOffset = CGSizeMake(0, 0)
+            shadow.shadowOpacity = 0
+            shadow.shadowOffset = CGSizeMake(0, 0)
         }
     }
 }
