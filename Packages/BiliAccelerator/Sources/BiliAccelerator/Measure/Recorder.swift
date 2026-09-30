@@ -21,6 +21,8 @@ final class RequestRecord {
     var status: Int?
     var error: String?
     var cancelled = false
+    /// Cancelled because another host won the race for these bytes.
+    var lostRace = false
 
     init(id: Int, clientID: Int, attempt: Int, host: String, rep: MediaRep, range: ByteRange?, startedAt: TimeInterval) {
         self.id = id
@@ -117,6 +119,15 @@ final class Recorder {
 
     func responded(_ record: RequestRecord, status: Int?) {
         record.status = status
+    }
+
+    /// Another host won the race; not held against this one as a failure.
+    func lostRace(_ record: RequestRecord) {
+        guard record.endedAt == nil else { return }
+        record.endedAt = Recorder.now()
+        record.cancelled = true
+        record.lostRace = true
+        totals[record.host, default: HostTotals()].cancelled += 1
     }
 
     /// The proxy gave up on this host for this request (a status, a hang, a short body).

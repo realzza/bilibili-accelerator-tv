@@ -46,10 +46,31 @@ enum Diagnostics {
             [
                 "video": session.key,
                 "activeHost": session.activeHost ?? "native",
-                "rescues": session.rescues,
+                "estimateMbps": session.measuredMbps.mapValues { round1($0) },
                 "failures": session.failures.mapValues(\.count),
                 "switches": session.switches.map { change -> [String: Any] in
-                    ["from": change.from, "to": change.to, "reason": change.reason, "ageS": round1(now - change.at)]
+                    var entry: [String: Any] = ["from": change.from, "to": change.to, "trigger": change.trigger,
+                                                "ageS": round1(now - change.at)]
+                    if let before = change.beforeMbps {
+                        entry["beforeMbps"] = round1(before)
+                    }
+                    return entry
+                },
+                "races": session.races.suffix(8).reversed().map { race -> [String: Any] in
+                    [
+                        "trigger": race.trigger,
+                        "from": race.from,
+                        "winner": race.winner ?? NSNull(),
+                        "moved": race.moved,
+                        "ageS": round1(now - race.at),
+                        "contenders": race.contenders.map { contender -> [String: Any] in
+                            var entry: [String: Any] = ["host": contender.host, "bytes": contender.bytes]
+                            if let seconds = contender.seconds {
+                                entry["ms"] = Int(seconds * 1000)
+                            }
+                            return entry
+                        },
+                    ]
                 },
             ]
         }
@@ -120,7 +141,9 @@ enum Diagnostics {
         if let error = record.error {
             entry["error"] = error
         }
-        if record.cancelled {
+        if record.lostRace {
+            entry["lostRace"] = true
+        } else if record.cancelled {
             entry["cancelled"] = true
         }
         if record.attempt > 0 {

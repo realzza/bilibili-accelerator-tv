@@ -1,26 +1,33 @@
 import Foundation
 
 struct ProxyTuning {
-    /// No first byte from a host within this long: fetch the bytes elsewhere. The web player
-    /// gives up after about 2 s; a cold overseas edge can take 1.4 to 11.5 s.
-    var firstByteTimeout: TimeInterval = 2.5
+    /// No first byte for this long is a hang whatever the buffer holds. Unlike the web player,
+    /// AVPlayer can't fail over by itself here: every URL it has points at the proxy.
+    var hardNoFirstByte: TimeInterval = 4
     /// A host that stops sending mid-body for this long is treated as failed.
     var stallTimeout: TimeInterval = 3
+    var raceBytes: Int64 = Routing.raceBytes
+    var raceTimeout: TimeInterval = Routing.raceTimeout
     /// Hosts one player request may go through before the proxy gives up and lets AVPlayer retry.
-    var maxAttempts = 4
+    var maxAttempts = 5
+    var tickInterval: TimeInterval = 0.25
 }
 
 /// Serves `/m/<token>.m4s`: fetches the requested byte range from a CDN host and streams it back.
-/// When a host fails partway, the rest of the range comes from the next host in the same
-/// response, so AVPlayer never sees the failure.
+/// A request that fails or gets stuck is finished by the winner of a race between two other
+/// hosts, in the same response, so AVPlayer never sees the failure.
 final class MediaProxy {
     let queue: DispatchQueue
     let upstream: Upstream
     let registry: Registry
     let recorder: Recorder
     var tuning = ProxyTuning()
+    /// Seconds buffered ahead of the playhead in the player being watched, updated about once a
+    /// second. Nil when no player reports it, as for feed previews.
+    var bufferAhead: Double?
     private(set) var sessions: [String: RoutingSession] = [:]
     private var transfers: [ObjectIdentifier: ProxyTransfer] = [:]
+    private var ticker: DispatchSourceTimer?
 
     init(queue: DispatchQueue, upstream: Upstream, registry: Registry, recorder: Recorder) {
         self.queue = queue
@@ -38,18 +45,25 @@ final class MediaProxy {
             response.respond(status: 404)
             return
         }
-        let transfer = ProxyTransfer(proxy: self, rep: rep, session: session(for: rep), range: request.range,
+        let session = session(for: rep)
+        let transfer = ProxyTransfer(proxy: self, rep: rep, session: session, range: request.range,
                                      response: response, clientID: recorder.nextClientID())
         let key = ObjectIdentifier(transfer)
         transfers[key] = transfer
         transfer.onDone = { [weak self] in
             self?.transfers[key] = nil
         }
-        transfer.start()
+        // A shortfall flagged on the last fragment: this one is served by a race.
+        let race = session.raceNext && rep.kind == .video && (request.range?.start ?? 0) > 0
+        if race {
+            session.raceNext = false
+        }
+        transfer.start(race: race)
+        startTicker()
     }
 
-    /// Routing state is per video, so a quality switch keeps the host a failover moved to and a
-    /// new video starts on the host the app chose.
+    /// Routing state is per video, so a quality switch keeps the host a race moved to and a new
+    /// video starts on the host the app chose.
     func session(for rep: MediaRep) -> RoutingSession {
         let key = Candidates.sessionKey(for: rep.preferred)
         if let session = sessions[key] {
@@ -61,6 +75,28 @@ final class MediaProxy {
             sessions[oldest.key] = nil
         }
         return session
+    }
+
+    private func startTicker() {
+        guard ticker == nil else { return }
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        timer.schedule(deadline: .now() + tuning.tickInterval, repeating: tuning.tickInterval)
+        timer.setEventHandler { [weak self] in
+            self?.tick()
+        }
+        timer.resume()
+        ticker = timer
+    }
+
+    private func tick() {
+        let now = Recorder.now()
+        for transfer in Array(transfers.values) {
+            transfer.tick(now: now, bufferAhead: bufferAhead, requiredBps: recorder.requiredBps)
+        }
+        if transfers.isEmpty {
+            ticker?.cancel()
+            ticker = nil
+        }
     }
 
     static func token(from path: String) -> String? {
@@ -79,8 +115,27 @@ final class MediaProxy {
     }
 }
 
-/// One player request, served from one or more hosts in turn.
+/// One player request, served by one host, or by the winner of a race when that host fails.
 final class ProxyTransfer {
+    /// One upstream fetch of the remaining range.
+    private final class Contender {
+        let host: String
+        let url: URL
+        let request = UpstreamRequest()
+        let record: RequestRecord
+        let startedAt = Recorder.now()
+        var http: HTTPURLResponse?
+        /// Bytes held back while a race is undecided.
+        var buffer = Data()
+        var completed = false
+
+        init(url: URL, record: RequestRecord) {
+            host = Candidates.key(url)
+            self.url = url
+            self.record = record
+        }
+    }
+
     private unowned let proxy: MediaProxy
     private let rep: MediaRep
     private let session: RoutingSession
@@ -90,12 +145,17 @@ final class ProxyTransfer {
 
     /// Body bytes already sent to the player.
     private var delivered: Int64 = 0
-    /// Body length promised to the player by the first host's headers.
+    /// Body length promised to the player.
     private var expected: Int64?
     private var tried: [String] = []
-    private var current: UpstreamRequest?
-    private var record: RequestRecord?
-    private var watchdog: DispatchWorkItem?
+    /// The contender whose bytes go to the player; nil while a race is undecided.
+    private var active: Contender?
+    private var racers: [Contender] = []
+    private var race: (trigger: String, from: String, stuckRate: Double, priorFailures: Int, target: Int64, startedAt: TimeInterval)?
+    private var raceTimer: DispatchWorkItem?
+    private var racedForStuck = false
+    private var pausedForClient = false
+    private var lastDataAt = Recorder.now()
     private var done = false
     var onDone: (() -> Void)?
 
@@ -108,41 +168,60 @@ final class ProxyTransfer {
         self.clientID = clientID
     }
 
-    func start() {
+    private var isHeader: Bool {
+        (requested?.start ?? 0) == 0
+    }
+
+    func start(race startWithRace: Bool) {
         response?.onClientGone = { [weak self] in
             self?.clientGone()
         }
-        attempt(url: session.url(for: rep))
+        let current = session.currentHost(for: rep)
+        if startWithRace {
+            startRace(trigger: "shortfall", from: current, stuckRate: session.estimate(current) ?? 0, priorFailures: 0)
+        } else {
+            let contender = makeContender(url: session.url(for: rep))
+            active = contender
+            proxy.upstream.start(url: contender.url, range: remainingRange(), referer: rep.referer, request: contender.request)
+        }
     }
 
-    private func attempt(url: URL) {
+    // MARK: - Contenders
+
+    private func makeContender(url: URL) -> Contender {
         let host = Candidates.key(url)
         tried.append(host)
-        let range = remainingRange()
+        let record = proxy.recorder.begin(rep: rep, host: host, range: remainingRange(), clientID: clientID, attempt: tried.count - 1)
+        let contender = Contender(url: url, record: record)
+        contender.request.onResponse = { [weak self, weak contender] http in
+            guard let self, let contender else { return }
+            self.didRespond(contender, http)
+        }
+        contender.request.onData = { [weak self, weak contender] data in
+            guard let self, let contender else { return }
+            self.didReceive(contender, data)
+        }
         let recorder = proxy.recorder
-        let record = recorder.begin(rep: rep, host: host, range: range, clientID: clientID, attempt: tried.count - 1)
-        self.record = record
-        let request = UpstreamRequest()
-        current = request
-
-        request.onResponse = { [weak self, weak request] http in
-            guard let self, let request, request === self.current else { return }
-            self.didReceive(http, record: record)
-        }
-        request.onData = { [weak self, weak request] data in
-            guard let self, let request, request === self.current else { return }
-            self.didReceive(data, record: record)
-        }
-        request.onComplete = { [weak self, weak request] error in
-            guard let self, let request, request === self.current else {
-                // A request abandoned for another host ends as cancelled; its record is final.
+        contender.request.onComplete = { [weak self] error in
+            guard let self, !self.done, let current = self.contender(for: record) else {
+                // Abandoned for another host or lost a race: its record is final already.
                 recorder.finished(record, error: error)
                 return
             }
-            self.didComplete(error, record: record)
+            self.didComplete(current, error)
         }
-        proxy.upstream.start(url: url, range: range, referer: rep.referer, request: request)
-        armWatchdog(after: proxy.tuning.firstByteTimeout, reason: "no first byte")
+        return contender
+    }
+
+    private func contender(for record: RequestRecord) -> Contender? {
+        if active?.record === record {
+            return active
+        }
+        return racers.first { $0.record === record }
+    }
+
+    private func isLive(_ contender: Contender) -> Bool {
+        !done && (contender === active || racers.contains { $0 === contender })
     }
 
     private func remainingRange() -> ByteRange? {
@@ -152,106 +231,293 @@ final class ProxyTransfer {
         return delivered > 0 ? ByteRange(start: delivered, end: nil) : nil
     }
 
-    private func didReceive(_ http: HTTPURLResponse?, record: RequestRecord) {
-        proxy.recorder.responded(record, status: http?.statusCode)
+    private var remainingLength: Int64? {
+        (expected ?? requested?.length).map { $0 - delivered }
+    }
+
+    // MARK: - Upstream events
+
+    private func didRespond(_ contender: Contender, _ http: HTTPURLResponse?) {
+        guard isLive(contender) else { return }
+        proxy.recorder.responded(contender.record, status: http?.statusCode)
         guard let http else {
-            failover(reason: "no response")
+            contenderFailed(contender, reason: "no response")
             return
         }
         let status = http.statusCode
         guard status == 200 || status == 206 else {
-            // 403 from a mirror that refuses the signature, 404, 5xx: try the next host.
-            failover(reason: "status \(status)")
+            // 403 from a mirror that refuses the signature, 404, 5xx: another host.
+            contenderFailed(contender, reason: "status \(status)")
             return
         }
-        guard let response else { return }
-
-        if !response.headSent {
-            if requested != nil, status == 200 {
-                failover(reason: "range ignored")
+        if let response, response.headSent {
+            // A continuation has to start exactly where the previous host stopped.
+            let start = (requested?.start ?? 0) + delivered
+            guard status == 206, let contentRange = http.value(forHTTPHeaderField: "Content-Range"),
+                  MediaProxy.contentRangeStart(contentRange) == start
+            else {
+                contenderFailed(contender, reason: "misaligned continuation")
                 return
             }
-            var headers: [(String, String)] = [
-                ("Content-Type", http.value(forHTTPHeaderField: "Content-Type") ?? "video/mp4"),
-                ("Accept-Ranges", "bytes"),
-            ]
-            if let length = http.value(forHTTPHeaderField: "Content-Length") {
-                headers.append(("Content-Length", length))
-                expected = Int64(length)
-            }
-            if let contentRange = http.value(forHTTPHeaderField: "Content-Range") {
-                headers.append(("Content-Range", contentRange))
-            }
-            response.sendHead(status: status, headers: headers)
-            if response.isHead {
-                current?.cancel()
-                finishClient()
-            }
+        } else if requested != nil, status == 200 {
+            contenderFailed(contender, reason: "range ignored")
             return
         }
-
-        // A continuation has to start exactly where the previous host stopped.
-        let start = (requested?.start ?? 0) + delivered
-        guard status == 206,
-              let contentRange = http.value(forHTTPHeaderField: "Content-Range"),
-              MediaProxy.contentRangeStart(contentRange) == start
-        else {
-            failover(reason: "misaligned continuation")
-            return
+        contender.http = http
+        if contender === active {
+            sendHeadIfNeeded(from: http)
         }
     }
 
-    private func didReceive(_ data: Data, record: RequestRecord) {
-        proxy.recorder.received(record, bytes: data.count)
-        guard let response else { return }
-        delivered += Int64(data.count)
-        response.sendBody(data)
-        if response.isBackedUp, let current {
-            // A player that reads slowly is not a slow host: pause the download, and the clock.
-            current.suspend()
-            disarmWatchdog()
-            response.onDrain = { [weak self, weak current] in
-                guard let self, let current, current === self.current else { return }
-                current.resume()
-                self.armWatchdog(after: self.proxy.tuning.stallTimeout, reason: "stalled")
-            }
-        } else {
-            armWatchdog(after: proxy.tuning.stallTimeout, reason: "stalled")
+    private func didReceive(_ contender: Contender, _ data: Data) {
+        guard isLive(contender) else { return }
+        proxy.recorder.received(contender.record, bytes: data.count)
+        if contender === active {
+            forward(data)
+            return
+        }
+        contender.buffer.append(data)
+        if let race, Int64(contender.buffer.count) >= race.target {
+            win(contender)
         }
     }
 
-    private func didComplete(_ error: Error?, record: RequestRecord) {
-        disarmWatchdog()
+    private func didComplete(_ contender: Contender, _ error: Error?) {
         if let error {
-            proxy.recorder.finished(record, error: error)
-            failover(reason: ProxyTransfer.describe(error))
+            proxy.recorder.finished(contender.record, error: error)
+            contenderFailed(contender, reason: ProxyTransfer.describe(error))
             return
         }
+        contender.completed = true
+        if contender === active {
+            completeActive(contender)
+        } else {
+            // A racer that fetched the whole remaining range before the race target.
+            win(contender)
+        }
+    }
+
+    private func completeActive(_ contender: Contender) {
         if let expected, delivered < expected {
-            proxy.recorder.failed(record, reason: "short body")
-            failover(reason: "short body")
+            proxy.recorder.failed(contender.record, reason: "short body")
+            rescue(contender, reason: "short body", countsAsFailure: true)
             return
         }
-        proxy.recorder.finished(record, error: nil)
+        proxy.recorder.finished(contender.record, error: nil)
+        if !isHeader {
+            session.noteCompleted(host: contender.host, rep: rep, seconds: Recorder.now() - contender.startedAt,
+                                  bytes: contender.record.bytes)
+            if rep.kind == .video,
+               session.shortfall(rep: rep, requiredBps: proxy.recorder.requiredBps, bufferAhead: proxy.bufferAhead)
+            {
+                session.raceNext = true
+            }
+        }
         finishClient()
     }
 
-    private func failover(reason: String) {
-        disarmWatchdog()
-        guard !done, let record else { return }
-        proxy.recorder.failed(record, reason: reason)
-        let abandoned = current
-        current = nil
-        abandoned?.cancel()
-        response?.onDrain = nil
+    private func contenderFailed(_ contender: Contender, reason: String) {
+        if contender === active {
+            rescue(contender, reason: reason, countsAsFailure: true)
+            return
+        }
+        guard let index = racers.firstIndex(where: { $0 === contender }) else { return }
+        racers.remove(at: index)
+        proxy.recorder.failed(contender.record, reason: reason)
+        session.noteFailure(contender.host)
+        contender.request.cancel()
+        if racers.isEmpty, let race {
+            raceTimer?.cancel()
+            session.conclude(trigger: race.trigger, rep: rep, from: race.from, stuckRateBps: race.stuckRate,
+                             priorFailures: race.priorFailures, raceBytes: race.target, contenders: [], winner: nil)
+            self.race = nil
+            startRace(trigger: race.trigger, from: race.from, stuckRate: race.stuckRate, priorFailures: race.priorFailures)
+        }
+    }
 
-        guard response != nil, tried.count < proxy.tuning.maxAttempts,
-              let next = session.failover(rep: rep, from: record.host, reason: reason, tried: tried)
-        else {
+    // MARK: - Watching the active host
+
+    /// Runs every quarter second. Ported from `stuckVerdict`: a fragment is stuck when it has had
+    /// no first byte for a second with under 3 s buffered, or when at its present rate it will
+    /// finish after the buffer runs out.
+    func tick(now: TimeInterval, bufferAhead: Double?, requiredBps: Int) {
+        guard !done, let contender = active, !contender.completed, !pausedForClient else { return }
+        let waited = now - contender.startedAt
+        guard let firstByte = contender.record.firstByteAt else {
+            if waited >= proxy.tuning.hardNoFirstByte {
+                rescue(contender, reason: "no first byte \(ProxyTransfer.seconds(waited))", countsAsFailure: true)
+            } else if let bufferAhead, bufferAhead < Routing.stuckUrgentBuffer, waited >= Routing.stuckNoFirstByte,
+                      !racedForStuck, onVideoHost(contender)
+            {
+                racedForStuck = true
+                rescue(contender, reason: "no first byte", countsAsFailure: true)
+            }
+            return
+        }
+        if now - lastDataAt >= proxy.tuning.stallTimeout {
+            rescue(contender, reason: "stalled \(ProxyTransfer.seconds(now - lastDataAt))", countsAsFailure: true)
+            return
+        }
+        guard rep.kind == .video, !isHeader, !racedForStuck, requiredBps > 0, let bufferAhead,
+              let total = expected, total >= Routing.stuckMinFragmentBytes, onVideoHost(contender)
+        else { return }
+        let transfer = now - firstByte
+        let loaded = contender.record.bytes
+        guard transfer >= Routing.stuckMinTransfer || loaded >= Routing.stuckMinFragmentBytes else { return }
+        let rate = transfer > 0 ? Double(loaded) * 8 / transfer : 0
+        let remaining = rate > 0 ? Double(total - delivered) * 8 / rate : .infinity
+        if rate < Routing.stuckRateFactor * Double(requiredBps), remaining > Routing.stuckMinRemaining,
+           remaining > bufferAhead - Routing.stuckMargin
+        {
+            racedForStuck = true
+            rescue(contender, reason: "slow fragment", countsAsFailure: false)
+        }
+    }
+
+    private func onVideoHost(_ contender: Contender) -> Bool {
+        contender.host == session.currentHost(for: rep)
+    }
+
+    // MARK: - Races
+
+    /// The active host failed or is too slow: its request ends and a race takes the rest.
+    private func rescue(_ contender: Contender, reason: String, countsAsFailure: Bool) {
+        let now = Recorder.now()
+        let priorFailures = session.recentFailures(contender.host, now: now)
+        if countsAsFailure {
+            session.noteFailure(contender.host, now: now)
+        }
+        let since = contender.record.firstByteAt ?? contender.startedAt
+        let stuckRate = now > since ? Double(contender.record.bytes) * 8 / (now - since) : 0
+        proxy.recorder.failed(contender.record, reason: reason)
+        active = nil
+        pausedForClient = false
+        response?.onDrain = nil
+        if !contender.completed {
+            contender.request.cancel()
+        }
+        startRace(trigger: reason, from: contender.host, stuckRate: stuckRate, priorFailures: priorFailures)
+    }
+
+    private func startRace(trigger: String, from: String, stuckRate: Double, priorFailures: Int) {
+        guard !done else { return }
+        let challengers = session.pickChallengers(for: rep, current: from, excluding: Set(tried))
+        guard tried.count < proxy.tuning.maxAttempts, !challengers.isEmpty else {
             giveUp()
             return
         }
-        attempt(url: next.url)
+        let target = min(proxy.tuning.raceBytes, max(1, remainingLength ?? proxy.tuning.raceBytes))
+        race = (trigger, from, stuckRate, priorFailures, target, Recorder.now())
+        let range = remainingRange()
+        racers = challengers.compactMap { host in
+            guard let url = Candidates.url(for: rep, host: host) else { return nil }
+            return makeContender(url: url)
+        }
+        guard !racers.isEmpty else {
+            race = nil
+            giveUp()
+            return
+        }
+        for racer in racers {
+            proxy.upstream.start(url: racer.url, range: range, referer: rep.referer, request: racer.request)
+        }
+        let timer = DispatchWorkItem { [weak self] in
+            self?.raceTimedOut()
+        }
+        raceTimer = timer
+        proxy.queue.asyncAfter(deadline: .now() + proxy.tuning.raceTimeout, execute: timer)
+    }
+
+    /// No contender reached the target in time: the one with the most bytes wins, or, if none has
+    /// any, the next pair gets a try.
+    private func raceTimedOut() {
+        guard !done, let race else { return }
+        if let best = racers.max(by: { $0.buffer.count < $1.buffer.count }), !best.buffer.isEmpty {
+            win(best)
+            return
+        }
+        for racer in racers {
+            proxy.recorder.failed(racer.record, reason: "no first byte in race")
+            session.noteFailure(racer.host)
+            racer.request.cancel()
+        }
+        racers = []
+        session.conclude(trigger: race.trigger, rep: rep, from: race.from, stuckRateBps: race.stuckRate,
+                         priorFailures: race.priorFailures, raceBytes: race.target, contenders: [], winner: nil)
+        self.race = nil
+        startRace(trigger: race.trigger, from: race.from, stuckRate: race.stuckRate, priorFailures: race.priorFailures)
+    }
+
+    private func win(_ winner: Contender) {
+        guard !done, let race, racers.contains(where: { $0 === winner }) else { return }
+        raceTimer?.cancel()
+        raceTimer = nil
+        let now = Recorder.now()
+        var results: [RoutingSession.Contender] = []
+        for racer in racers {
+            if racer === winner {
+                results.append(.init(host: racer.host, bytes: Int64(racer.buffer.count), seconds: now - race.startedAt, ok: true))
+            } else {
+                results.append(.init(host: racer.host, bytes: racer.record.bytes, seconds: nil, ok: false))
+                proxy.recorder.lostRace(racer.record)
+                racer.request.cancel()
+            }
+        }
+        racers = []
+        self.race = nil
+        session.conclude(trigger: race.trigger, rep: rep, from: race.from, stuckRateBps: race.stuckRate,
+                         priorFailures: race.priorFailures, raceBytes: race.target, contenders: results, winner: winner.host)
+
+        active = winner
+        lastDataAt = now
+        if let http = winner.http {
+            sendHeadIfNeeded(from: http)
+        }
+        let held = winner.buffer
+        winner.buffer = Data()
+        forward(held)
+        if winner.completed {
+            completeActive(winner)
+        }
+    }
+
+    // MARK: - To the player
+
+    private func sendHeadIfNeeded(from http: HTTPURLResponse) {
+        guard let response, !response.headSent else { return }
+        var headers: [(String, String)] = [
+            ("Content-Type", http.value(forHTTPHeaderField: "Content-Type") ?? "video/mp4"),
+            ("Accept-Ranges", "bytes"),
+        ]
+        if let length = http.value(forHTTPHeaderField: "Content-Length") {
+            headers.append(("Content-Length", length))
+            expected = Int64(length)
+        }
+        if let contentRange = http.value(forHTTPHeaderField: "Content-Range") {
+            headers.append(("Content-Range", contentRange))
+        }
+        response.sendHead(status: http.statusCode, headers: headers)
+        if response.isHead {
+            active?.request.cancel()
+            finishClient()
+        }
+    }
+
+    private func forward(_ data: Data) {
+        guard !data.isEmpty, let response else { return }
+        lastDataAt = Recorder.now()
+        delivered += Int64(data.count)
+        response.sendBody(data)
+        guard response.isBackedUp, let active else { return }
+        // A player that reads slowly is not a slow host: pause the download and the clocks.
+        active.request.suspend()
+        pausedForClient = true
+        response.onDrain = { [weak self, weak active] in
+            guard let self, let active, active === self.active else { return }
+            active.request.resume()
+            self.pausedForClient = false
+            self.lastDataAt = Recorder.now()
+        }
     }
 
     private func giveUp() {
@@ -271,36 +537,30 @@ final class ProxyTransfer {
     }
 
     private func clientGone() {
-        let abandoned = current
-        current = nil
-        abandoned?.cancel()
+        let abandoned = [active].compactMap { $0 } + racers
+        active = nil
+        racers = []
         finish()
+        for contender in abandoned {
+            contender.request.cancel()
+        }
     }
 
     private func finish() {
         guard !done else { return }
         done = true
-        disarmWatchdog()
+        raceTimer?.cancel()
+        raceTimer = nil
         onDone?()
         onDone = nil
-    }
-
-    private func armWatchdog(after timeout: TimeInterval, reason: String) {
-        watchdog?.cancel()
-        let item = DispatchWorkItem { [weak self] in
-            self?.failover(reason: "\(reason) \(timeout)s")
-        }
-        watchdog = item
-        proxy.queue.asyncAfter(deadline: .now() + timeout, execute: item)
-    }
-
-    private func disarmWatchdog() {
-        watchdog?.cancel()
-        watchdog = nil
     }
 
     private static func describe(_ error: Error) -> String {
         let nsError = error as NSError
         return nsError.domain == NSURLErrorDomain ? "error \(nsError.code)" : "\(nsError.domain) \(nsError.code)"
+    }
+
+    private static func seconds(_ value: TimeInterval) -> String {
+        String(format: "%.1fs", value)
     }
 }

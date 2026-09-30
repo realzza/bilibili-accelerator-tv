@@ -15,10 +15,12 @@ enum Candidates {
         "upos-tf-all-tx.bilivideo.com",
     ]
 
-    /// Overseas edges. The ones Bilibili did not issue see little of this region's traffic
-    /// and are usually cold, so failover tries them last.
+    /// Overseas edges, Akamai included, as `describeHost` has it. The UPOS ones Bilibili did not
+    /// issue see little of this region's traffic and are usually cold, so failover tries them
+    /// last, and they lose ties to mainland mirrors.
     static func isOverseas(_ host: String) -> Bool {
-        host.range(of: #"^upos-[a-z0-9-]*ov\.bilivideo\.com$"#, options: [.regularExpression, .caseInsensitive]) != nil
+        isAkamai(host)
+            || host.range(of: #"^upos-[a-z0-9-]*ov\.bilivideo\.com$"#, options: [.regularExpression, .caseInsensitive]) != nil
     }
 
     static func isAkamai(_ host: String) -> Bool {

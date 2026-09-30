@@ -19,6 +19,7 @@ public final class Accelerator {
     private var proxy: MediaProxy?
     private var port: UInt16?
     private var lastPlayer: PlayerProbe.Snapshot?
+    private var snapshotCount = 0
 
     // Main thread.
     private let probe = PlayerProbe()
@@ -99,13 +100,13 @@ public final class Accelerator {
         }
     }
 
-    /// Call on the main thread when a new player item starts, so the report can show buffer
-    /// and stall state next to the requests.
+    /// Call on the main thread when a new player item starts. The engine reads the buffer from
+    /// it to judge whether a slow fragment will arrive in time.
     public func attach(playerItem: AVPlayerItem) {
         probe.attach(playerItem)
         queue.async { self.recorder.beginSession() }
         snapshotTimer?.invalidate()
-        snapshotTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
+        snapshotTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             self?.takeSnapshot()
         }
     }
@@ -116,6 +117,7 @@ public final class Accelerator {
         probe.detach()
         snapshotTimer?.invalidate()
         snapshotTimer = nil
+        queue.async { self.proxy?.bufferAhead = nil }
     }
 
     /// The current report as JSON.
@@ -126,10 +128,14 @@ public final class Accelerator {
     private func takeSnapshot() {
         let snapshot = probe.snapshot()
         queue.async { [self] in
-            if snapshot != nil {
+            if let snapshot {
                 lastPlayer = snapshot
+                proxy?.bufferAhead = snapshot.bufferedAhead
             }
-            writeDiagnosticsFile()
+            snapshotCount += 1
+            if snapshotCount % 2 == 0 {
+                writeDiagnosticsFile()
+            }
         }
     }
 

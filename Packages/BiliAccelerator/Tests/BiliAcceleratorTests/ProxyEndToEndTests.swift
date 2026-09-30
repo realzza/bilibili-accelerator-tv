@@ -28,8 +28,9 @@ final class ProxyEndToEndTests: XCTestCase {
             try cdnPorts.append(start(cdn))
         }
         proxy = MediaProxy(queue: queue, upstream: Upstream(queue: queue, userAgent: "test"), registry: registry, recorder: recorder)
-        proxy.tuning.firstByteTimeout = 0.3
+        proxy.tuning.hardNoFirstByte = 0.3
         proxy.tuning.stallTimeout = 0.3
+        proxy.tuning.raceTimeout = 5
         let proxy = proxy!
         proxyServer = HTTPServer(queue: queue) { request, response in
             proxy.handle(request, response)
@@ -93,7 +94,7 @@ final class ProxyEndToEndTests: XCTestCase {
         let (body, _) = try fetch([cdn(0, "e", "hang=1"), cdn(1, "e")], range: "bytes=0-499999")
         XCTAssertEqual(body, blob.subdata(in: 0..<500_000))
         let records = queue.sync { recorder.records }
-        XCTAssertEqual(records.first?.error, "no first byte 0.3s")
+        XCTAssertTrue(records.first?.error?.hasPrefix("no first byte") == true)
         XCTAssertEqual(records.last?.bytes, 500_000)
     }
 
@@ -109,18 +110,62 @@ final class ProxyEndToEndTests: XCTestCase {
         XCTAssertEqual(http.statusCode, 502)
     }
 
-    func testTwoFailuresMoveTheVideoToTheRescuingHost() throws {
-        let urls = [cdn(0, "42301918299-1-100026.m4s", "dropAfter=1000"), cdn(1, "42301918299-1-100026.m4s")]
-        _ = try fetch(urls, range: "bytes=0-99999")
-        XCTAssertEqual(queue.sync { proxy.sessions["42301918299"]?.activeHost }, nil)
-        _ = try fetch(urls, range: "bytes=100000-199999")
+    func testAHostThatDeliveredNothingLosesTheVideoAtOnce() throws {
+        let urls = [cdn(0, "42301918299-1-100026.m4s", "dropAfter=0"), cdn(1, "42301918299-1-100026.m4s")]
+        let (body, _) = try fetch(urls, range: "bytes=100-99999")
+        XCTAssertEqual(body, blob.subdata(in: 100..<100_000))
         XCTAssertEqual(queue.sync { proxy.sessions["42301918299"]?.activeHost }, "127.0.0.1:\(cdnPorts[1])")
 
         let before = queue.sync { recorder.records.count }
-        let (body, _) = try fetch(urls, range: "bytes=200000-299999")
-        XCTAssertEqual(body, blob.subdata(in: 200_000..<300_000))
-        let after = queue.sync { Array(recorder.records[before...]) }
-        XCTAssertEqual(after.map(\.host), ["127.0.0.1:\(cdnPorts[1])"])
+        _ = try fetch(urls, range: "bytes=100000-199999")
+        XCTAssertEqual(queue.sync { recorder.records[before...].map(\.host) }, ["127.0.0.1:\(cdnPorts[1])"])
+    }
+
+    func testOneHangOnAHostThatKeepsUpRescuesTheFragmentOnly() throws {
+        let good = cdn(0, "40105674804-1-100026.m4s")
+        let slow = cdn(1, "40105674804-1-100026.m4s", "slow=1")
+        // A few fragments at loopback speed give the first host a record.
+        for index in 0..<3 {
+            let start = 100 + index * 300_000
+            _ = try fetch([good, slow], range: "bytes=\(start)-\(start + 299_999)")
+        }
+        let hanging = cdn(0, "40105674804-1-100026.m4s", "hang=1")
+        let (body, _) = try fetch([hanging, slow], range: "bytes=1000000-1099999")
+        XCTAssertEqual(body, blob.subdata(in: 1_000_000..<1_100_000))
+
+        let session = try XCTUnwrap(queue.sync { proxy.sessions["40105674804"] })
+        XCTAssertNil(queue.sync { session.activeHost })
+        let race = try XCTUnwrap(queue.sync { session.races.last })
+        XCTAssertEqual(race.winner, "127.0.0.1:\(cdnPorts[1])")
+        XCTAssertFalse(race.moved)
+    }
+
+    func testASecondFailureWithinTheWindowMovesTheVideo() throws {
+        let good = cdn(0, "39161958084-1-100026.m4s")
+        let slow = cdn(1, "39161958084-1-100026.m4s", "slow=1")
+        for index in 0..<3 {
+            let start = 100 + index * 300_000
+            _ = try fetch([good, slow], range: "bytes=\(start)-\(start + 299_999)")
+        }
+        let hanging = cdn(0, "39161958084-1-100026.m4s", "hang=1")
+        _ = try fetch([hanging, slow], range: "bytes=1000000-1049999")
+        XCTAssertNil(queue.sync { proxy.sessions["39161958084"]?.activeHost })
+        _ = try fetch([hanging, slow], range: "bytes=1050000-1099999")
+        XCTAssertEqual(queue.sync { proxy.sessions["39161958084"]?.activeHost }, "127.0.0.1:\(cdnPorts[1])")
+    }
+
+    func testARaceGoesToTheFasterChallenger() throws {
+        let urls = [cdn(0, "36277192945-1-100026.m4s", "dropAfter=0"),
+                    cdn(1, "36277192945-1-100026.m4s", "slow=1"),
+                    cdn(2, "36277192945-1-100026.m4s")]
+        let (body, _) = try fetch(urls, range: "bytes=0-1999999")
+        XCTAssertEqual(body, blob.subdata(in: 0..<2_000_000))
+        let race = try XCTUnwrap(queue.sync { proxy.sessions["36277192945"]?.races.last })
+        XCTAssertEqual(race.winner, "127.0.0.1:\(cdnPorts[2])")
+        XCTAssertEqual(Set(race.contenders.map(\.host)), ["127.0.0.1:\(cdnPorts[1])", "127.0.0.1:\(cdnPorts[2])"])
+        let loser = try XCTUnwrap(queue.sync { recorder.records.first { $0.host == "127.0.0.1:\(cdnPorts[1])" } })
+        XCTAssertTrue(loser.lostRace)
+        XCTAssertFalse(loser.failed)
     }
 
     func testCancelsTheCDNRequestWhenThePlayerHangsUp() throws {
@@ -216,7 +261,10 @@ final class ProxyEndToEndTests: XCTestCase {
     private func register(_ urls: [URL]) throws -> URL {
         let rep = MediaRep(kind: .video, id: 120, bandwidth: 5_000_000, codecs: "hev1.1.6.L150.90",
                            urls: urls, preferred: urls[0], referer: ProxyEndToEndTests.referer)
-        let token = queue.sync { registry.add(rep) }
+        let token = queue.sync { () -> String in
+            proxy.session(for: rep).random = { 0.99 }
+            return registry.add(rep)
+        }
         return try XCTUnwrap(URL(string: "http://127.0.0.1:\(proxyPort)/m/\(token).m4s"))
     }
 

@@ -40,6 +40,7 @@ final class CandidatesTests: XCTestCase {
     func testOverseasHosts() {
         XCTAssertTrue(Candidates.isOverseas("upos-sz-mirrorcosov.bilivideo.com"))
         XCTAssertTrue(Candidates.isOverseas("upos-sz-mirrorhwov.bilivideo.com"))
+        XCTAssertTrue(Candidates.isOverseas("upos-hz-mirrorakam.akamaized.net"))
         XCTAssertFalse(Candidates.isOverseas("upos-sz-mirrorcos.bilivideo.com"))
         XCTAssertFalse(Candidates.isOverseas("upos-tf-all-tx.bilivideo.com"))
     }
