@@ -18,6 +18,7 @@ class BLTabBarViewController: UITabBarController, UITabBarControllerDelegate {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        view.backgroundColor = Theme.background
         delegate = self
         Settings.bootstrapTabBarPlacementModelIfNeeded()
         NotificationCenter.default.addObserver(self, selector: #selector(handleTabBarPagesDidChange), name: .tabBarPagesDidChange, object: nil)

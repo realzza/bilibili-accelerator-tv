@@ -11,6 +11,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options connectionOptions: UIScene.ConnectionOptions) {
         guard let windowScene = scene as? UIWindowScene else { return }
         let window = UIWindow(windowScene: windowScene)
+        // The theme is designed for the dark appearance only.
+        window.overrideUserInterfaceStyle = .dark
+        window.backgroundColor = Theme.background
         self.window = window
 
         if ApiRequest.isLogin() {
