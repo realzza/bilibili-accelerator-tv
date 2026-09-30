@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		B1A0CCE12E9A000100000001 /* BiliAccelerator in Frameworks */ = {isa = PBXBuildFile; productRef = B1A0CCE12E9A000100000002 /* BiliAccelerator */; };
 		0A41EE192A630FEA0066444C /* SwiftProtobuf in Frameworks */ = {isa = PBXBuildFile; productRef = 0A41EE182A630FEA0066444C /* SwiftProtobuf */; };
 		2806E51E2C1593A000164C10 /* LookinServer in Frameworks */ = {isa = PBXBuildFile; productRef = 2806E51D2C1593A000164C10 /* LookinServer */; };
 		49078E47291BEA2400F556BD /* PocketSVG in Frameworks */ = {isa = PBXBuildFile; productRef = 49078E46291BEA2400F556BD /* PocketSVG */; };
@@ -75,6 +76,7 @@
 				499C75EC293058C9003160FB /* CocoaAsyncSocket in Frameworks */,
 				F927ED9F2610B5C300EAB8E3 /* Kingfisher in Frameworks */,
 				2806E51E2C1593A000164C10 /* LookinServer in Frameworks */,
+				B1A0CCE12E9A000100000001 /* BiliAccelerator in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -133,6 +135,7 @@
 				49508E102943420100D26812 /* CocoaLumberjackSwift */,
 				0A41EE182A630FEA0066444C /* SwiftProtobuf */,
 				2806E51D2C1593A000164C10 /* LookinServer */,
+				B1A0CCE12E9A000100000002 /* BiliAccelerator */,
 			);
 			productName = BilibiliLive;
 			productReference = F9B57350260F5F7400771ED5 /* BilibiliLive.app */;
@@ -178,6 +181,7 @@
 				49508E0D2943420100D26812 /* XCRemoteSwiftPackageReference "CocoaLumberjack" */,
 				0A41EE172A630FEA0066444C /* XCRemoteSwiftPackageReference "swift-protobuf" */,
 				2806E51C2C1593A000164C10 /* XCRemoteSwiftPackageReference "LookinServer" */,
+				B1A0CCE12E9A000100000003 /* XCLocalSwiftPackageReference "Packages/BiliAccelerator" */,
 			);
 			productRefGroup = F9B57351260F5F7400771ED5 /* Products */;
 			projectDirPath = "";
@@ -356,7 +360,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = MEWHFZ92DY;
+				DEVELOPMENT_TEAM = "";
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
 					"$(PROJECT_DIR)/BilibiliLive/Vendor",
@@ -371,7 +375,7 @@
 					"$(inherited)",
 					"$(PROJECT_DIR)/BilibiliLive/Vendor",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.etan.tv.BilibiliLive;
+				PRODUCT_BUNDLE_IDENTIFIER = "io.github.realzza.bilibili-tv";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
@@ -387,7 +391,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = MEWHFZ92DY;
+				DEVELOPMENT_TEAM = "";
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
 					"$(PROJECT_DIR)/BilibiliLive/Vendor",
@@ -402,7 +406,7 @@
 					"$(inherited)",
 					"$(PROJECT_DIR)/BilibiliLive/Vendor",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.etan.tv.BilibiliLive;
+				PRODUCT_BUNDLE_IDENTIFIER = "io.github.realzza.bilibili-tv";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 3;
@@ -432,6 +436,13 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		B1A0CCE12E9A000100000003 /* XCLocalSwiftPackageReference "Packages/BiliAccelerator" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/BiliAccelerator;
+		};
+/* End XCLocalSwiftPackageReference section */
 
 /* Begin XCRemoteSwiftPackageReference section */
 		0A41EE172A630FEA0066444C /* XCRemoteSwiftPackageReference "swift-protobuf" */ = {
@@ -541,6 +552,11 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		B1A0CCE12E9A000100000002 /* BiliAccelerator */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = B1A0CCE12E9A000100000003 /* XCLocalSwiftPackageReference "Packages/BiliAccelerator" */;
+			productName = BiliAccelerator;
+		};
 		0A41EE182A630FEA0066444C /* SwiftProtobuf */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 0A41EE172A630FEA0066444C /* XCRemoteSwiftPackageReference "swift-protobuf" */;

@@ -5,6 +5,7 @@
 //  Created by whw on 2022/10/19.
 //
 
+import BiliAccelerator
 import UIKit
 
 class SettingsViewController: UIViewController {
@@ -189,6 +190,10 @@ class SettingsViewController: UIViewController {
                         optionString: PlaySpeed.blDefaults.map({ $0.name }))
                 {
                     Settings.mediaPlayerSpeed = $0
+                }
+                Toggle(title: "线路加速（实验）", setting: Settings.acceleratorEnabled, onChange: Settings.acceleratorEnabled.toggle()) {
+                    enabled in
+                    Accelerator.shared.isEnabled = enabled
                 }
                 Toggle(title: "Avc优先(卡顿尝试开启)", setting: Settings.preferAvc, onChange: Settings.preferAvc.toggle())
                 Toggle(title: "无损音频和杜比全景声", setting: Settings.losslessAudio, onChange: Settings.losslessAudio.toggle())
