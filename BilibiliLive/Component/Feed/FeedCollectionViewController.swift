@@ -183,7 +183,7 @@ class FeedCollectionViewController: UIViewController {
             widthDimension: .fractionalWidth(style.fractionalWidth),
             heightDimension: heightDimension
         ))
-        let hSpacing: CGFloat = style == .large ? 35 : 30
+        let hSpacing = style.itemInset
         item.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: hSpacing, bottom: 0, trailing: hSpacing)
         let group = NSCollectionLayoutGroup.horizontal(
             layoutSize: NSCollectionLayoutSize(
@@ -287,5 +287,10 @@ extension FeedDisplayStyle {
         case .normal: return 4
         case .large, .sideBar: return 3
         }
+    }
+
+    /// Horizontal inset on each side of a card, inside its column.
+    var itemInset: CGFloat {
+        self == .large ? 35 : 30
     }
 }
