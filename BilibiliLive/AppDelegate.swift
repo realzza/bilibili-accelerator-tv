@@ -48,7 +48,8 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         /// Commands from the accelerator's debug server, for driving tests from a Mac:
         /// `play?aid=&cid=` (or `epid=`), `detail?aid=&cid=`, `stop`, `home` (the tab bar, even when
         /// signed out), `tab?index=`, `quality?qn=`, `seek?to=<fraction of the duration>`, `accel?on=0|1`,
-        /// `route` (the 线路 tab on its own) and `routetest` (its test button).
+        /// `route` (the 线路 tab on its own), `routetest` (its test button) and `focus?x=&y=` (focus
+        /// what is at that point).
         private static func handleDebugCommand(_ command: String, _ parameters: [String: String]) {
             switch command {
             case "seek":
@@ -96,6 +97,26 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
                 UIViewController.topMostViewController().present(panel, animated: false)
             case "routetest":
                 Accelerator.shared.testOtherHosts()
+            case "focus":
+                // Moves focus to the focusable view at a screen point, since there is no remote here.
+                guard let window = AppDelegate.shared.window,
+                      let x = parameters["x"].flatMap(Double.init), let y = parameters["y"].flatMap(Double.init)
+                else { return }
+                let point = CGPoint(x: x, y: y)
+                var target: UIView?
+                func visit(_ view: UIView) {
+                    guard !view.isHidden, view.alpha > 0.01 else { return }
+                    if view.canBecomeFocused, view.convert(view.bounds, to: window).contains(point) {
+                        target = view
+                    }
+                    view.subviews.forEach(visit)
+                }
+                visit(window)
+                guard let target else { return }
+                // tvOS ignores focus requests for views the screen doesn't prefer, so the top view
+                // controller prefers the target for one focus update.
+                let controller = UIViewController.topMostViewController()
+                DebugFocus.prefer(target, in: controller)
             case "accel":
                 let on = parameters["on"] != "0"
                 Settings.acceleratorEnabled = on
@@ -108,6 +129,35 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
                 }
             default:
                 Logger.warn("unknown debug command \(command)")
+            }
+        }
+
+        /// Makes a view controller prefer one view for the next focus update.
+        private enum DebugFocus {
+            weak static var target: UIView?
+            private static var patched = Set<ObjectIdentifier>()
+
+            static func prefer(_ view: UIView, in controller: UIViewController) {
+                patch(type(of: controller))
+                target = view
+                controller.setNeedsFocusUpdate()
+                controller.updateFocusIfNeeded()
+                target = nil
+            }
+
+            private static func patch(_ cls: AnyClass) {
+                guard patched.insert(ObjectIdentifier(cls)).inserted else { return }
+                let selector = #selector(getter: UIViewController.preferredFocusEnvironments)
+                guard let method = class_getInstanceMethod(cls, selector) else { return }
+                typealias Getter = @convention(c) (AnyObject, Selector) -> NSArray
+                let original = unsafeBitCast(method_getImplementation(method), to: Getter.self)
+                let replacement: @convention(block) (AnyObject) -> NSArray = { object in
+                    if let target = DebugFocus.target {
+                        return [target]
+                    }
+                    return original(object, selector)
+                }
+                class_replaceMethod(cls, selector, imp_implementationWithBlock(replacement), method_getTypeEncoding(method))
             }
         }
 
