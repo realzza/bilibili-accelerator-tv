@@ -75,6 +75,12 @@ class FeedViewController: StandardVideoCollectionViewController<ApiRequest.FeedR
                 configure(heroView)
             }
         }
+        Task { [weak self] in
+            guard let list = try? await WebRequest.requestToView(),
+                  let self, self.hero?.aid == hero.aid else { return }
+            heroInWatchLater = list.contains { $0.aid == hero.aid }
+            heroView?.isInWatchLater = heroInWatchLater
+        }
     }
 
     private func configure(_ view: HeroHeaderView) {

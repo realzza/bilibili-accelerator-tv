@@ -338,6 +338,11 @@ class VideoDetailViewController: UIViewController {
             self?.didSentCoins = coins
         }
 
+        Task { [weak self, aid] in
+            guard let list = try? await WebRequest.requestToView(), let self, self.aid == aid else { return }
+            setWatchLater(list.contains { $0.aid == aid })
+        }
+
         if isBangumi {
             header.favButton.isHidden = true
             recommandCollectionView.superview?.isHidden = true
@@ -585,16 +590,18 @@ class VideoDetailViewController: UIViewController {
     }
 
     private func actionWatchLater() {
-        let button = header.watchLaterButton
-        let add = !button.isOn
-        button.isOn = add
-        button.title = add ? "已添加" : "稍后看"
+        let add = !header.watchLaterButton.isOn
+        setWatchLater(add)
         let aid = aid
-        Task {
+        Task { [weak self] in
             guard await !WebRequest.requestToView(aid: aid, add: add) else { return }
-            button.isOn = !add
-            button.title = add ? "稍后看" : "已添加"
+            self?.setWatchLater(!add)
         }
+    }
+
+    private func setWatchLater(_ added: Bool) {
+        header.watchLaterButton.isOn = added
+        header.watchLaterButton.title = added ? "已添加" : "稍后看"
     }
 
     private func actionDislike() {
