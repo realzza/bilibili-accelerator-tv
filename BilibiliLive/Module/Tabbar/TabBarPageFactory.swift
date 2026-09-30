@@ -50,7 +50,8 @@ class TabBarPageVCFactory {
 
         switch page {
         case .search:
-            vc.tabBarItem.image = UIImage(systemName: "magnifyingglass")
+            vc.tabBarItem.image = UIImage(systemName: "magnifyingglass",
+                                          withConfiguration: UIImage.SymbolConfiguration(font: BLTabBarViewController.titleFont))
             vc.tabBarItem.title = nil
         default:
             vc.tabBarItem.title = page.title
