@@ -237,7 +237,7 @@ struct CardFacts {
             } else if views == nil, text.hasSuffix("观看") || text.hasSuffix("播放") {
                 views = text
             } else if views == nil, item.icon == "play.rectangle", CardFacts.isCount(text) {
-                views = "\(text)播放"
+                views = text.replacingOccurrences(of: " ", with: "") + "播放"
             } else if item.icon == nil {
                 others.append(text)
             }
@@ -249,7 +249,8 @@ struct CardFacts {
         text.range(of: #"^\d{1,3}:\d{2}(:\d{2})?(/\d{1,3}:\d{2}(:\d{2})?)?$"#, options: .regularExpression) != nil
     }
 
+    /// `139`, `5.6万`, or `12.3 万` as `numberString()` writes it.
     static func isCount(_ text: String) -> Bool {
-        text.range(of: #"^[0-9.]+[万亿]?$"#, options: .regularExpression) != nil
+        text.range(of: #"^[0-9.]+ ?[万亿]?$"#, options: .regularExpression) != nil
     }
 }
