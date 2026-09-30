@@ -18,9 +18,7 @@ final class HeroHeaderView: UICollectionReusableView {
     let playButton = HeroHeaderView.makeButton(title: "播放", symbol: "play.fill", primary: true)
     private let detailButton = HeroHeaderView.makeButton(title: "详情", symbol: "info.circle", primary: false)
     private let upButton = HeroHeaderView.makeButton(title: "UP 主页", symbol: "person.crop.circle", primary: false)
-    private let backdrop = UIImageView()
-    private let sideScrim = CAGradientLayer()
-    private let bottomScrim = CAGradientLayer()
+    private let backdrop = BackdropView()
     private let kickerLabel = UILabel()
     private let titleLabel = UILabel()
     private let metaLabel = UILabel()
@@ -41,18 +39,6 @@ final class HeroHeaderView: UICollectionReusableView {
         }
 
         addSubview(backdrop)
-        backdrop.contentMode = .scaleAspectFill
-        backdrop.clipsToBounds = true
-        sideScrim.colors = [Theme.background.cgColor,
-                            Theme.background.withAlphaComponent(0.72).cgColor,
-                            Theme.background.withAlphaComponent(0).cgColor]
-        sideScrim.locations = [0, 0.3, 0.72]
-        sideScrim.startPoint = CGPoint(x: 0, y: 0.5)
-        sideScrim.endPoint = CGPoint(x: 1, y: 0.5)
-        backdrop.layer.addSublayer(sideScrim)
-        bottomScrim.colors = [Theme.background.withAlphaComponent(0).cgColor, Theme.background.cgColor]
-        bottomScrim.locations = [0.55, 1]
-        backdrop.layer.addSublayer(bottomScrim)
 
         kickerLabel.font = .systemFont(ofSize: 24, weight: .semibold)
         kickerLabel.textColor = Theme.accent
@@ -95,11 +81,6 @@ final class HeroHeaderView: UICollectionReusableView {
         }
         let left = bounds.width * 0.28
         backdrop.frame = CGRect(x: left, y: -top, width: bounds.width - left + right, height: bounds.height - 24 + top)
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        sideScrim.frame = backdrop.bounds
-        bottomScrim.frame = backdrop.bounds
-        CATransaction.commit()
     }
 
     func configure(title: String, kicker: String?, meta: String, cover: URL?, hasUpSpace: Bool) {
@@ -111,28 +92,18 @@ final class HeroHeaderView: UICollectionReusableView {
             if cover.scheme == nil {
                 cover = URL(string: "https:\(cover.absoluteString)") ?? cover
             }
-            backdrop.kf.setImage(with: cover, options: [.processor(DownsamplingImageProcessor(size: CGSize(width: 1600, height: 900))),
-                                                        .transition(.fade(0.3))])
+            backdrop.imageView.kf.setImage(with: cover, options: [.processor(DownsamplingImageProcessor(size: CGSize(width: 1600, height: 900))),
+                                                                  .transition(.fade(0.3))])
         }
     }
 
     private static func makeButton(title: String, symbol: String, primary: Bool) -> UIButton {
-        var config: UIButton.Configuration
-        if #available(tvOS 26.0, *) {
-            config = primary ? .prominentGlass() : .glass()
-        } else {
-            config = primary ? .filled() : .bordered()
-        }
+        var config = UIButton.Configuration.capsule(primary: primary)
         config.title = title
         config.image = UIImage(systemName: symbol)
         config.imagePadding = 12
-        config.cornerStyle = .capsule
         config.contentInsets = NSDirectionalEdgeInsets(top: 18, leading: 36, bottom: 18, trailing: 36)
-        config.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { attributes in
-            var attributes = attributes
-            attributes.font = .systemFont(ofSize: 28, weight: .semibold)
-            return attributes
-        }
+        config.setTitleFont(.systemFont(ofSize: 28, weight: .semibold))
         return UIButton(configuration: config)
     }
 }

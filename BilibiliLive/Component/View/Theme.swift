@@ -32,6 +32,30 @@ enum Theme {
     static let groupRadius: CGFloat = 28
 }
 
+extension UIButton.Configuration {
+    /// The capsule buttons of the redesign: Liquid Glass on tvOS 26 and later, the system
+    /// platter before that. tvOS draws the focused state itself.
+    static func capsule(primary: Bool = false) -> UIButton.Configuration {
+        var config: UIButton.Configuration
+        if #available(tvOS 26.0, *) {
+            config = primary ? .prominentGlass() : .glass()
+        } else {
+            config = primary ? .filled() : .bordered()
+        }
+        config.cornerStyle = .capsule
+        return config
+    }
+
+    /// Sets the title font, which a configuration otherwise takes from the button style.
+    mutating func setTitleFont(_ font: UIFont) {
+        titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { attributes in
+            var attributes = attributes
+            attributes.font = font
+            return attributes
+        }
+    }
+}
+
 /// A label with padding, for the small pills on thumbnails.
 final class PillLabel: UILabel {
     var insets = UIEdgeInsets(top: 4, left: 10, bottom: 4, right: 10)
