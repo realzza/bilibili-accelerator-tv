@@ -26,26 +26,8 @@ private struct PageRange {
 }
 
 class VideoDetailViewController: UIViewController {
-    @IBOutlet var backgroundImageView: UIImageView!
     @IBOutlet var effectContainerView: UIVisualEffectView!
-    @IBOutlet var titleLabel: UILabel!
-    @IBOutlet var upButton: BLCustomTextButton!
-    @IBOutlet var followButton: BLCustomButton!
-    @IBOutlet var coverImageView: UIImageView!
-    @IBOutlet var playButton: BLCustomButton!
-    @IBOutlet var likeButton: BLCustomButton!
-    @IBOutlet var coinButton: BLCustomButton!
-    @IBOutlet var noteView: NoteDetailView!
-    @IBOutlet var dislikeButton: BLCustomButton!
-    @IBOutlet var actionButtonSpaceView: UIView!
-    @IBOutlet var durationLabel: UILabel!
-    @IBOutlet var playCountLabel: UILabel!
-    @IBOutlet var danmakuLabel: UILabel!
-    @IBOutlet var uploadTimeLabel: UILabel!
-    @IBOutlet var bvidLabel: UILabel!
-    @IBOutlet var followersLabel: UILabel!
-    @IBOutlet var avatarImageView: UIImageView!
-    @IBOutlet var favButton: BLCustomButton!
+    @IBOutlet var contentStackView: UIStackView!
     @IBOutlet var pageCollectionView: UICollectionView!
     @IBOutlet var recommandCollectionView: UICollectionView!
     @IBOutlet var replysCollectionView: UICollectionView!
@@ -56,6 +38,9 @@ class VideoDetailViewController: UIViewController {
     @IBOutlet var ugcView: UIView!
 
     private var loadingView = UIActivityIndicatorView()
+    private let header = VideoDetailHeaderView()
+    /// The cover, top right, behind the header. It fades out as the page scrolls down.
+    private let backdrop = BackdropView()
 
     private var pageCollectionViewTopToTitleConstraint: Constraint?
     private var pageCollectionViewTopToRangeConstraint: Constraint?
@@ -85,7 +70,7 @@ class VideoDetailViewController: UIViewController {
     private var didSentCoins = 0 {
         didSet {
             if didSentCoins > 0 {
-                coinButton.isOn = true
+                header.coinButton.isOn = true
             }
         }
     }
@@ -99,6 +84,7 @@ class VideoDetailViewController: UIViewController {
     private var allUgcEpisodes = [VideoDetail.Info.UgcSeason.UgcVideoInfo]()
 
     private var subscriptions = [AnyCancellable]()
+    private var isFocusInHeader = false
 
     static func create(aid: Int, cid: Int?, epid: Int? = nil) -> VideoDetailViewController {
         let vc = UIStoryboard(name: "Main", bundle: .main).instantiateViewController(identifier: String(describing: self)) as! VideoDetailViewController
@@ -122,6 +108,7 @@ class VideoDetailViewController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        setupHeader()
 
         pageCollectionView.register(BLTextOnlyCollectionViewCell.self, forCellWithReuseIdentifier: String(describing: BLTextOnlyCollectionViewCell.self))
         pageCollectionView.collectionViewLayout = makePageCollectionViewLayout()
@@ -131,31 +118,6 @@ class VideoDetailViewController: UIViewController {
         ugcCollectionView.register(RelatedVideoCell.self, forCellWithReuseIdentifier: String(describing: RelatedVideoCell.self))
         recommandCollectionView.collectionViewLayout = makeRelatedVideoCollectionViewLayout()
         ugcCollectionView.collectionViewLayout = makeRelatedVideoCollectionViewLayout()
-        noteView.onPrimaryAction = {
-            [weak self] note in
-            let detail = ContentDetailViewController.createDesp(content: note.label.text ?? "")
-            self?.present(detail, animated: true)
-        }
-
-        var focusGuide = UIFocusGuide()
-        view.addLayoutGuide(focusGuide)
-        NSLayoutConstraint.activate([
-            focusGuide.topAnchor.constraint(equalTo: upButton.topAnchor),
-            focusGuide.leftAnchor.constraint(equalTo: followButton.rightAnchor),
-            focusGuide.rightAnchor.constraint(equalTo: coverImageView.leftAnchor),
-            focusGuide.bottomAnchor.constraint(equalTo: upButton.bottomAnchor),
-        ])
-        focusGuide.preferredFocusEnvironments = [followButton]
-
-        focusGuide = UIFocusGuide()
-        view.addLayoutGuide(focusGuide)
-        NSLayoutConstraint.activate([
-            focusGuide.topAnchor.constraint(equalTo: actionButtonSpaceView.topAnchor),
-            focusGuide.leftAnchor.constraint(equalTo: actionButtonSpaceView.leftAnchor),
-            focusGuide.rightAnchor.constraint(equalTo: actionButtonSpaceView.rightAnchor),
-            focusGuide.bottomAnchor.constraint(equalTo: actionButtonSpaceView.bottomAnchor),
-        ])
-        focusGuide.preferredFocusEnvironments = [dislikeButton]
 
         replysCollectionView.publisher(for: \.contentSize).sink { [weak self] newSize in
             self?.repliesCollectionViewHeightConstraints.constant = newSize.height
@@ -165,8 +127,37 @@ class VideoDetailViewController: UIViewController {
         Task { await fetchData() }
     }
 
-    override var preferredFocusedView: UIView? {
-        return playButton
+    override var preferredFocusEnvironments: [UIFocusEnvironment] {
+        [header.playButton]
+    }
+
+    private func setupHeader() {
+        view.backgroundColor = Theme.background
+        effectContainerView.effect = nil
+        view.insertSubview(backdrop, at: 0)
+        backdrop.snp.makeConstraints { make in
+            make.top.trailing.equalToSuperview()
+            make.width.equalToSuperview().multipliedBy(2.0 / 3)
+            make.height.equalTo(backdrop.snp.width).multipliedBy(9.0 / 16)
+        }
+        scrollView.publisher(for: \.contentOffset).sink { [weak self] offset in
+            self?.backdrop.alpha = 1 - min(max((offset.y - 120) / 400, 0), 1)
+        }.store(in: &subscriptions)
+        scrollView.delegate = self
+
+        contentStackView.insertArrangedSubview(header, at: 0)
+        header.playButton.addAction(UIAction { [weak self] _ in self?.actionPlay() }, for: .primaryActionTriggered)
+        header.upButton.addAction(UIAction { [weak self] _ in self?.actionShowUpSpace() }, for: .primaryActionTriggered)
+        header.followButton.addAction(UIAction { [weak self] _ in self?.actionFollow() }, for: .primaryActionTriggered)
+        header.likeButton.button.addAction(UIAction { [weak self] _ in self?.actionLike() }, for: .primaryActionTriggered)
+        header.coinButton.button.addAction(UIAction { [weak self] _ in self?.actionCoin() }, for: .primaryActionTriggered)
+        header.favButton.button.addAction(UIAction { [weak self] _ in self?.actionFavorite() }, for: .primaryActionTriggered)
+        header.watchLaterButton.button.addAction(UIAction { [weak self] _ in self?.actionWatchLater() }, for: .primaryActionTriggered)
+        header.dislikeButton.button.addAction(UIAction { [weak self] _ in self?.actionDislike() }, for: .primaryActionTriggered)
+        header.noteView.onPrimaryAction = { [weak self] note in
+            let detail = ContentDetailViewController.createDesp(content: note.label.text ?? "")
+            self?.present(detail, animated: true)
+        }
     }
 
     private func updatePlayProgressIfNeeded(progress: BangumiInfo.UserStatus.Progress?, episode: BangumiInfo.Episode) {
@@ -267,7 +258,7 @@ class VideoDetailViewController: UIViewController {
         scrollView.setContentOffset(.zero, animated: false)
         setNeedsFocusUpdate()
         updateFocusIfNeeded()
-        backgroundImageView.alpha = 0
+        backdrop.imageView.alpha = 0
         setupLoading()
         pageView.isHidden = true
         setPageRangeCollectionViewHidden(true)
@@ -341,21 +332,26 @@ class VideoDetailViewController: UIViewController {
         }
 
         WebRequest.requestLikeStatus(aid: aid) { [weak self] isLiked in
-            self?.likeButton.isOn = isLiked
+            self?.header.likeButton.isOn = isLiked
         }
 
         WebRequest.requestCoinStatus(aid: aid) { [weak self] coins in
             self?.didSentCoins = coins
         }
 
+        Task { [weak self, aid] in
+            guard let list = try? await WebRequest.requestToView(), let self, self.aid == aid else { return }
+            setWatchLater(list.contains { $0.aid == aid })
+        }
+
         if isBangumi {
-            favButton.isHidden = true
+            header.favButton.isHidden = true
             recommandCollectionView.superview?.isHidden = true
             return
         }
 
         WebRequest.requestFavoriteStatus(aid: aid) { [weak self] isFavorited in
-            self?.favButton.isOn = isFavorited
+            self?.header.favButton.isOn = isFavorited
         }
     }
 
@@ -396,33 +392,30 @@ class VideoDetailViewController: UIViewController {
     }
 
     private func update(with data: VideoDetail) {
-        playCountLabel.text = data.View.stat.view.numberString()
-        danmakuLabel.text = data.View.stat.danmaku.numberString()
-        followersLabel.text = (data.Card.follower ?? 0).numberString() + "粉丝"
-        uploadTimeLabel.text = data.View.date
-        bvidLabel.text = data.View.bvid
-        coinButton.title = data.View.stat.coin.numberString()
-        favButton.title = data.View.stat.favorite.numberString()
-        likeButton.title = data.View.stat.like.numberString()
-
-        durationLabel.text = data.View.durationString
-        titleLabel.text = data.title
-        upButton.title = data.ownerName
-        followButton.isOn = data.Card.following
+        header.titleLabel.text = data.title
+        header.setUploader(name: data.ownerName, avatar: data.avatar(size: 240))
+        header.followersLabel.text = Self.count(data.Card.follower ?? 0) + " 粉丝"
+        header.isFollowing = data.Card.following
+        let stats = [Self.count(data.View.stat.view) + " 播放",
+                     Self.count(data.View.stat.danmaku) + " 弹幕",
+                     data.View.date,
+                     TimeInterval(data.View.duration).timeString(),
+                     data.View.bvid]
+        header.statsLabel.text = stats.compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
+        header.coinButton.title = Self.count(data.View.stat.coin)
+        header.favButton.title = Self.count(data.View.stat.favorite)
+        header.likeButton.title = Self.count(data.View.stat.like)
 
         // 更新播放按钮标题
         if Settings.continuePlay {
             if let lastPlayCid, lastPlayCid == cid {
-                playButton.title = "继续播放"
+                header.playTitle = "继续播放"
             } else {
-                playButton.title = "播放"
+                header.playTitle = "播放"
             }
         }
 
-        avatarImageView.kf.setImage(with: data.avatar(size: 240), options: [.processor(DownsamplingImageProcessor(size: CGSize(width: 80, height: 80))), .processor(RoundCornerImageProcessor(radius: .widthFraction(0.5))), .cacheSerializer(FormatIndicatedCacheSerializer.png)])
-
-        coverImageView.kf.setImage(with: data.pic)
-        backgroundImageView.kf.setImage(with: data.pic)
+        backdrop.imageView.kf.setImage(with: data.pic, options: [.processor(DownsamplingImageProcessor(size: CGSize(width: 1280, height: 720)))])
         recommandCollectionView.superview?.isHidden = data.Related.count == 0
 
         var notes = [String]()
@@ -431,7 +424,9 @@ class VideoDetailViewController: UIViewController {
             notes.append(status)
         }
         notes.append(data.View.desc ?? "")
-        noteView.label.text = notes.joined(separator: "\n")
+        let note = notes.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        header.noteView.label.text = note
+        header.noteView.isHidden = note.isEmpty || note == "-"
         if !isBangumi {
             pages = data.View.pages ?? []
         }
@@ -450,7 +445,7 @@ class VideoDetailViewController: UIViewController {
         loadingView.removeFromSuperview()
         effectContainerView.isHidden = false
         UIView.animate(withDuration: 0.25) {
-            self.backgroundImageView.alpha = 1
+            self.backdrop.imageView.alpha = 1
         }
 
         if let season = data.View.ugc_season {
@@ -465,7 +460,15 @@ class VideoDetailViewController: UIViewController {
         }
 
         ugcCollectionView.reloadData()
-        ugcLabel.text = "合集 \(data.View.ugc_season?.title ?? "")  \(data.View.ugc_season?.sections.first?.title ?? "")"
+        if let season = data.View.ugc_season {
+            var parts = ["合集", season.title]
+            if season.sections.count > 1,
+               let section = season.sections.first(where: { $0.episodes.contains { $0.aid == data.View.aid } })
+            {
+                parts.append(section.title)
+            }
+            ugcLabel.text = parts.filter { !$0.isEmpty }.joined(separator: " · ")
+        }
         ugcView.isHidden = allUgcEpisodes.count == 0
         if allUgcEpisodes.count > 0 {
             ugcCollectionView.scrollToItem(at: IndexPath(item: allUgcEpisodes.map { $0.aid }.firstIndex(of: aid) ?? 0, section: 0), at: .left, animated: false)
@@ -474,20 +477,25 @@ class VideoDetailViewController: UIViewController {
         recommandCollectionView.reloadData()
     }
 
-    @IBAction func actionShowUpSpace(_ sender: Any) {
+    /// `12.3万`: `numberString()` without its space, for the tight lines of the header.
+    private static func count(_ value: Int) -> String {
+        value.numberString().replacingOccurrences(of: " ", with: "")
+    }
+
+    private func actionShowUpSpace() {
         let upSpaceVC = UpSpaceViewController()
         upSpaceVC.mid = data?.View.owner.mid
         present(upSpaceVC, animated: true)
     }
 
-    @IBAction func actionFollow(_ sender: Any) {
-        followButton.isOn.toggle()
+    private func actionFollow() {
+        header.isFollowing.toggle()
         if let mid = data?.View.owner.mid {
-            WebRequest.follow(mid: mid, follow: followButton.isOn)
+            WebRequest.follow(mid: mid, follow: header.isFollowing)
         }
     }
 
-    @IBAction func actionPlay(_ sender: Any) {
+    private func actionPlay() {
         let player = VideoPlayerViewController(playInfo: PlayInfo(aid: aid, cid: cid, epid: epid, seasonId: seasonId, subType: subType, lastPlayCid: lastPlayCid, playTimeInSecond: playTimeInSecond, title: data?.title))
         player.data = data
         if pages.count > 0, let index = pages.firstIndex(where: { $0.cid == cid }) {
@@ -505,7 +513,8 @@ class VideoDetailViewController: UIViewController {
         present(player, animated: true, completion: nil)
     }
 
-    @IBAction func actionLike(_ sender: Any) {
+    private func actionLike() {
+        let likeButton = header.likeButton
         Task {
             if likeButton.isOn {
                 likeButton.title? -= 1
@@ -520,8 +529,10 @@ class VideoDetailViewController: UIViewController {
         }
     }
 
-    @IBAction func actionCoin(_ sender: Any) {
+    private func actionCoin() {
         guard didSentCoins < 2 else { return }
+        let coinButton = header.coinButton
+        let likeButton = header.likeButton
         let alert = UIAlertController(title: "投币个数", message: nil, preferredStyle: .actionSheet)
         WebRequest.requestTodayCoins { todayCoins in
             alert.message = "今日已投(\(todayCoins / 10)/5)个币"
@@ -529,10 +540,10 @@ class VideoDetailViewController: UIViewController {
         let aid = aid
         alert.addAction(UIAlertAction(title: "1", style: .default) { [weak self] _ in
             guard let self else { return }
-            self.coinButton.title? += 1
-            if !self.likeButton.isOn {
-                self.likeButton.title? += 1
-                self.likeButton.isOn = true
+            coinButton.title? += 1
+            if !likeButton.isOn {
+                likeButton.title? += 1
+                likeButton.isOn = true
             }
             self.didSentCoins += 1
             WebRequest.requestCoin(aid: aid, num: 1)
@@ -540,12 +551,11 @@ class VideoDetailViewController: UIViewController {
         if didSentCoins == 0 {
             alert.addAction(UIAlertAction(title: "2", style: .default) { [weak self] _ in
                 guard let self else { return }
-                self.coinButton.title? += 2
-                if !self.likeButton.isOn {
-                    self.likeButton.title? += 1
-                    self.likeButton.isOn = true
+                coinButton.title? += 2
+                if !likeButton.isOn {
+                    likeButton.title? += 1
+                    likeButton.isOn = true
                 }
-                self.likeButton.isOn = true
                 self.didSentCoins += 2
                 WebRequest.requestCoin(aid: aid, num: 2)
             })
@@ -554,7 +564,8 @@ class VideoDetailViewController: UIViewController {
         present(alert, animated: true)
     }
 
-    @IBAction func actionFavorite(_ sender: Any) {
+    private func actionFavorite() {
+        let favButton = header.favButton
         Task {
             guard let favList = try? await WebRequest.requestFavVideosList() else {
                 return
@@ -568,9 +579,9 @@ class VideoDetailViewController: UIViewController {
             let alert = UIAlertController(title: "收藏", message: nil, preferredStyle: .actionSheet)
             let aid = aid
             for fav in favList {
-                alert.addAction(UIAlertAction(title: fav.title, style: .default) { [weak self] _ in
-                    self?.favButton.title? += 1
-                    self?.favButton.isOn = true
+                alert.addAction(UIAlertAction(title: fav.title, style: .default) { _ in
+                    favButton.title? += 1
+                    favButton.isOn = true
                     WebRequest.requestFavorite(aid: aid, mid: fav.id)
                 })
             }
@@ -579,13 +590,42 @@ class VideoDetailViewController: UIViewController {
         }
     }
 
-    @IBAction func actionDislike(_ sender: Any) {
-        dislikeButton.isOn.toggle()
-        ApiRequest.requestDislike(aid: aid, dislike: dislikeButton.isOn)
+    private func actionWatchLater() {
+        let add = !header.watchLaterButton.isOn
+        setWatchLater(add)
+        let aid = aid
+        Task { [weak self] in
+            guard await !WebRequest.requestToView(aid: aid, add: add) else { return }
+            self?.setWatchLater(!add)
+        }
+    }
+
+    private func setWatchLater(_ added: Bool) {
+        header.watchLaterButton.isOn = added
+        header.watchLaterButton.title = added ? "已添加" : "稍后看"
+    }
+
+    private func actionDislike() {
+        header.dislikeButton.isOn.toggle()
+        ApiRequest.requestDislike(aid: aid, dislike: header.dislikeButton.isOn)
     }
 }
 
 extension VideoDetailViewController: UICollectionViewDelegate {
+    override func didUpdateFocus(in context: UIFocusUpdateContext, with coordinator: UIFocusAnimationCoordinator) {
+        super.didUpdateFocus(in: context, with: coordinator)
+        isFocusInHeader = context.nextFocusedView?.isDescendant(of: header) ?? false
+    }
+
+    /// tvOS scrolls the page to bring a focused button toward the middle, which pushed the title
+    /// against the top edge. While focus is in the header, the page stays at the top.
+    func scrollViewWillEndDragging(_ scrollView: UIScrollView, withVelocity velocity: CGPoint,
+                                   targetContentOffset: UnsafeMutablePointer<CGPoint>)
+    {
+        guard scrollView === self.scrollView, isFocusInHeader else { return }
+        targetContentOffset.pointee.y = 0
+    }
+
     func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
         switch collectionView {
         case pageRangeCollectionView:
@@ -670,7 +710,7 @@ extension VideoDetailViewController: UICollectionViewDataSource {
         case ugcCollectionView:
             let cell = collectionView.dequeueReusableCell(withReuseIdentifier: String(describing: RelatedVideoCell.self), for: indexPath) as! RelatedVideoCell
             let record = allUgcEpisodes[indexPath.row]
-            cell.update(data: record)
+            cell.update(data: record, isCurrent: record.aid == aid)
             return cell
         case recommandCollectionView:
             let cell = collectionView.dequeueReusableCell(withReuseIdentifier: String(describing: RelatedVideoCell.self), for: indexPath) as! RelatedVideoCell
@@ -685,14 +725,28 @@ extension VideoDetailViewController: UICollectionViewDataSource {
 }
 
 class BLCardView: TVCardView {
+    /// White at 0.08 over the ground, made opaque: the card draws translucent colors as white.
+    static let restingFill = UIColor(red: 33 / 255, green: 35 / 255, blue: 38 / 255, alpha: 1)
+
+    var fill = BLCardView.restingFill {
+        didSet { cardBackgroundColor = fill }
+    }
+
+    /// The cell around the card takes focus and draws it. The card's own focus effect grows its
+    /// content past the clipped background, which only shifts the content.
+    override var canBecomeFocused: Bool {
+        false
+    }
+
     override func didMoveToSuperview() {
         super.didMoveToSuperview()
-        subviews.first?.subviews.first?.subviews.last?.subviews.first?.subviews.first?.layer.cornerRadius = 12
+        focusSizeIncrease = .zero
+        subviews.first?.subviews.first?.subviews.last?.subviews.first?.subviews.first?.layer.cornerRadius = Theme.rowRadius
     }
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        cardBackgroundColor = UIColor(named: "bgColor")
+        cardBackgroundColor = fill
     }
 }
 
@@ -706,6 +760,7 @@ extension VideoDetailViewController {
             let groupSize = NSCollectionLayoutSize(widthDimension: .absolute(300), heightDimension: .absolute(150))
             let group = NSCollectionLayoutGroup.horizontal(layoutSize: groupSize, subitems: [item])
             let section = NSCollectionLayoutSection(group: group)
+            section.contentInsets = .init(top: 0, leading: 8, bottom: 0, trailing: 8)
             section.orthogonalScrollingBehavior = .continuous
             section.interGroupSpacing = 40
             return section
@@ -721,6 +776,7 @@ extension VideoDetailViewController {
             let groupSize = NSCollectionLayoutSize(widthDimension: .absolute(200), heightDimension: .fractionalHeight(1))
             let group = NSCollectionLayoutGroup.horizontal(layoutSize: groupSize, subitems: [item])
             let section = NSCollectionLayoutSection(group: group)
+            section.contentInsets = .init(top: 0, leading: 8, bottom: 0, trailing: 8)
             section.orthogonalScrollingBehavior = .continuous
             section.interGroupSpacing = 40
             return section
@@ -731,12 +787,12 @@ extension VideoDetailViewController {
         UICollectionViewCompositionalLayout {
             _, _ in
             let itemSize = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1.0),
-                                                  heightDimension: .estimated(200))
+                                                  heightDimension: .estimated(256))
             let item = NSCollectionLayoutItem(layoutSize: itemSize)
-            let groupSize = NSCollectionLayoutSize(widthDimension: .fractionalWidth(0.18), heightDimension: .estimated(200))
+            let groupSize = NSCollectionLayoutSize(widthDimension: .absolute(380), heightDimension: .estimated(256))
             let group = NSCollectionLayoutGroup.horizontal(layoutSize: groupSize, subitems: [item])
             let section = NSCollectionLayoutSection(group: group)
-            section.contentInsets = .init(top: 40, leading: 0, bottom: 0, trailing: 0)
+            section.contentInsets = .init(top: 40, leading: 8, bottom: 0, trailing: 8)
             section.orthogonalScrollingBehavior = .continuous
             section.interGroupSpacing = 40
             return section
@@ -744,33 +800,62 @@ extension VideoDetailViewController {
     }
 }
 
+/// A small video card in a row: 16:9 artwork and a one-line title, with 正在看 on the
+/// episode that is open.
 class RelatedVideoCell: BLMotionCollectionViewCell {
     let titleLabel = MarqueeLabel()
     let imageView = UIImageView()
+    private let artwork = UIView()
+    private let badgeLabel = PillLabel()
+
+    override var shadowLayer: CALayer {
+        artwork.layer
+    }
+
     override func setup() {
         super.setup()
-        contentView.addSubview(imageView)
+        scaleFactor = 1.08
+        contentView.addSubview(artwork)
         contentView.addSubview(titleLabel)
-        imageView.snp.makeConstraints { make in
+        artwork.snp.makeConstraints { make in
             make.top.left.right.equalToSuperview()
-            make.width.equalTo(imageView.snp.height).multipliedBy(14.0 / 9)
+            make.height.equalTo(artwork.snp.width).multipliedBy(9.0 / 16)
         }
-        imageView.layer.cornerRadius = 12
+        artwork.addSubview(imageView)
+        imageView.snp.makeConstraints { make in
+            make.edges.equalToSuperview()
+        }
+        imageView.layer.cornerRadius = Theme.cardRadius
+        imageView.layer.cornerCurve = .continuous
         imageView.clipsToBounds = true
         imageView.contentMode = .scaleAspectFill
+        imageView.backgroundColor = UIColor(white: 1, alpha: 0.06)
+        artwork.addSubview(badgeLabel)
+        badgeLabel.snp.makeConstraints { make in
+            make.leading.top.equalToSuperview().inset(12)
+        }
+        badgeLabel.text = "正在看"
+        badgeLabel.font = .systemFont(ofSize: 18, weight: .bold)
+        badgeLabel.textColor = Theme.onAccent
+        badgeLabel.backgroundColor = Theme.accent
+        badgeLabel.layer.cornerRadius = 10
+        badgeLabel.clipsToBounds = true
+        badgeLabel.isHidden = true
         titleLabel.snp.makeConstraints { make in
             make.left.right.bottom.equalToSuperview()
-            make.top.equalTo(imageView.snp.bottom).offset(6)
+            make.top.equalTo(artwork.snp.bottom).offset(12)
         }
         titleLabel.setContentHuggingPriority(.required, for: .vertical)
-        titleLabel.font = UIFont.systemFont(ofSize: 28)
-        titleLabel.fadeLength = 60
+        titleLabel.font = .systemFont(ofSize: 25, weight: .medium)
+        titleLabel.textColor = Theme.textPrimary
+        titleLabel.fadeLength = 40
         stopScroll()
     }
 
-    func update(data: any DisplayData) {
+    func update(data: any DisplayData, isCurrent: Bool = false) {
         titleLabel.text = data.title
-        imageView.kf.setImage(with: data.pic, options: [.processor(DownsamplingImageProcessor(size: CGSize(width: 360, height: 202))), .cacheOriginalImage])
+        badgeLabel.isHidden = !isCurrent
+        imageView.kf.setImage(with: data.pic, options: [.processor(DownsamplingImageProcessor(size: CGSize(width: 380, height: 214))), .cacheOriginalImage])
     }
 
     override func didUpdateFocus(in context: UIFocusUpdateContext, with coordinator: UIFocusAnimationCoordinator) {
@@ -841,13 +926,10 @@ class NoteDetailView: UIControl {
 
     func setup() {
         addSubview(backgroundView)
-        backgroundView.backgroundColor = UIColor(named: "bgColor")
-        backgroundView.layer.shadowOffset = CGSizeMake(0, 10)
-        backgroundView.layer.shadowOpacity = 0.15
-        backgroundView.layer.shadowRadius = 16.0
-        backgroundView.layer.cornerRadius = 20
+        backgroundView.backgroundColor = Theme.focusedFill
+        backgroundView.layer.cornerRadius = Theme.rowRadius
         backgroundView.layer.cornerCurve = .continuous
-        backgroundView.isHidden = !isFocused
+        backgroundView.alpha = 0
         backgroundView.snp.makeConstraints { make in
             make.top.bottom.equalToSuperview()
             make.left.equalToSuperview().offset(-20)
@@ -855,19 +937,23 @@ class NoteDetailView: UIControl {
         }
 
         addSubview(label)
-        label.numberOfLines = 0
-        label.font = UIFont.systemFont(ofSize: 29)
-        label.textColor = UIColor(named: "titleColor")
+        label.numberOfLines = 2
+        label.font = .systemFont(ofSize: 24)
+        label.textColor = Theme.textSecondary
         label.snp.makeConstraints { make in
             make.leading.trailing.equalToSuperview()
-            make.top.equalToSuperview().offset(14)
-            make.bottom.lessThanOrEqualToSuperview().offset(-14)
+            make.top.equalToSuperview().offset(12)
+            make.bottom.equalToSuperview().offset(-12)
         }
     }
 
     override func didUpdateFocus(in context: UIFocusUpdateContext, with coordinator: UIFocusAnimationCoordinator) {
         super.didUpdateFocus(in: context, with: coordinator)
-        backgroundView.isHidden = !isFocused
+        coordinator.addCoordinatedAnimations {
+            self.backgroundView.alpha = self.isFocused ? 1 : 0
+            self.label.textColor = self.isFocused ? Theme.focusedText : Theme.textSecondary
+            self.transform = self.isFocused ? CGAffineTransform(scaleX: 1.02, y: 1.02) : .identity
+        }
     }
 
     override func pressesEnded(_ presses: Set<UIPress>, with event: UIPressesEvent?) {

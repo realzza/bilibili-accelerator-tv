@@ -22,7 +22,8 @@ class WeeklyWatchViewController: StandardVideoCollectionViewController<VideoDeta
     override func request(page: Int) async throws -> [VideoDetail.Info] {
         list = try await WebRequest.requestWeeklyWatchList()
         if let item = list.first {
-            collectionVC.headerText = "\(item.name)  \(item.subject)"
+            collectionVC.headerText = item.name
+            collectionVC.headerDetail = item.subject
             let data = try await WebRequest.requestWeeklyWatch(wid: item.number)
             return data
         } else {

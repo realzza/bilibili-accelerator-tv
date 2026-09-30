@@ -147,6 +147,25 @@ public final class Accelerator {
         queue.async { self.proxy?.bufferAhead = nil }
     }
 
+    /// The routing state of the video playing now, or nil when none has played through the
+    /// proxy. `completion` runs on the main queue.
+    public func routeStatus(_ completion: @escaping (RouteStatus?) -> Void) {
+        queue.async { [self] in
+            let status = proxy?.status(player: lastPlayer)
+            DispatchQueue.main.async {
+                completion(status)
+            }
+        }
+    }
+
+    /// Serves the next fragment of the video playing now with a race between two other hosts.
+    /// The video moves only if one of them is clearly faster.
+    public func testOtherHosts() {
+        queue.async { [self] in
+            proxy?.requestTest()
+        }
+    }
+
     /// The current report as JSON.
     public func diagnosticsJSON() -> Data {
         queue.sync { Diagnostics.json(report()) }
@@ -158,6 +177,7 @@ public final class Accelerator {
             if let snapshot {
                 lastPlayer = snapshot
                 proxy?.bufferAhead = snapshot.bufferedAhead
+                proxy?.sampleRate()
             }
             snapshotCount += 1
             if snapshotCount % 2 == 0 {

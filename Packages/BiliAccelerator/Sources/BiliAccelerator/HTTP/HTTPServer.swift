@@ -38,11 +38,22 @@ final class HTTPServer {
         stopped = false
         let parameters = NWParameters.tcp
         parameters.allowLocalEndpointReuse = true
-        parameters.acceptLocalOnly = localOnly
         let requested = NWEndpoint.Port(rawValue: port) ?? .any
         let listener: NWListener
         do {
-            listener = try NWListener(using: parameters, on: requested)
+            #if targetEnvironment(simulator)
+                // The tvOS simulator turns loopback connections away under acceptLocalOnly, so
+                // there the listener binds to the loopback address instead.
+                if localOnly {
+                    parameters.requiredLocalEndpoint = .hostPort(host: .ipv4(.loopback), port: requested)
+                    listener = try NWListener(using: parameters)
+                } else {
+                    listener = try NWListener(using: parameters, on: requested)
+                }
+            #else
+                parameters.acceptLocalOnly = localOnly
+                listener = try NWListener(using: parameters, on: requested)
+            #endif
         } catch {
             note("init failed: \(error.localizedDescription)")
             queue.async { completion(nil) }

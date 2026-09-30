@@ -47,27 +47,27 @@
                             <constraints>
                                 <constraint firstItem="cNI-2h-EqQ" firstAttribute="leading" secondItem="QAe-nh-BI1" secondAttribute="trailing" constant="8" symbolic="YES" id="4dP-d4-GdT"/>
                                 <constraint firstAttribute="trailing" secondItem="rG1-i7-Lu2" secondAttribute="trailing" constant="20" id="GSC-ii-sg3"/>
-                                <constraint firstAttribute="bottom" secondItem="rG1-i7-Lu2" secondAttribute="bottom" id="Y41-Mq-PTg"/>
+                                <constraint firstAttribute="bottom" relation="greaterThanOrEqual" secondItem="rG1-i7-Lu2" secondAttribute="bottom" constant="20" id="Y41-Mq-PTg"/>
                                 <constraint firstItem="cNI-2h-EqQ" firstAttribute="centerY" secondItem="QAe-nh-BI1" secondAttribute="centerY" id="eDT-iC-jop"/>
                                 <constraint firstItem="rG1-i7-Lu2" firstAttribute="leading" secondItem="NU3-Bt-p2n" secondAttribute="leading" constant="20" id="jyZ-sx-GoO"/>
                                 <constraint firstItem="QAe-nh-BI1" firstAttribute="top" secondItem="NU3-Bt-p2n" secondAttribute="top" constant="20" id="nxD-2i-sMk"/>
-                                <constraint firstItem="rG1-i7-Lu2" firstAttribute="top" secondItem="QAe-nh-BI1" secondAttribute="bottom" id="p2n-wK-8Mf"/>
+                                <constraint firstItem="rG1-i7-Lu2" firstAttribute="top" secondItem="QAe-nh-BI1" secondAttribute="bottom" constant="14" id="p2n-wK-8Mf"/>
                                 <constraint firstItem="QAe-nh-BI1" firstAttribute="leading" secondItem="NU3-Bt-p2n" secondAttribute="leading" constant="20" id="q3B-Ru-Hbx"/>
                             </constraints>
                             <userDefinedRuntimeAttributes>
                                 <userDefinedRuntimeAttribute type="boolean" keyPath="layer.masksToBounds" value="YES"/>
                                 <userDefinedRuntimeAttribute type="number" keyPath="layer.cornerRadius">
-                                    <integer key="value" value="12"/>
+                                    <integer key="value" value="20"/>
                                 </userDefinedRuntimeAttribute>
                             </userDefinedRuntimeAttributes>
                         </tvCardContentView>
                     </tvCardView>
                 </subviews>
                 <constraints>
-                    <constraint firstItem="BbK-et-U1E" firstAttribute="top" secondItem="Wff-Lz-AFu" secondAttribute="top" id="Jbi-rF-EEN"/>
-                    <constraint firstAttribute="bottom" secondItem="BbK-et-U1E" secondAttribute="bottom" id="SIX-9P-hvK"/>
-                    <constraint firstAttribute="trailing" secondItem="BbK-et-U1E" secondAttribute="trailing" id="bBd-7k-i5K"/>
-                    <constraint firstItem="BbK-et-U1E" firstAttribute="leading" secondItem="Wff-Lz-AFu" secondAttribute="leading" id="fIO-WV-pqN"/>
+                    <constraint firstItem="BbK-et-U1E" firstAttribute="top" secondItem="Wff-Lz-AFu" secondAttribute="top" constant="20" id="Jbi-rF-EEN"/>
+                    <constraint firstAttribute="bottom" secondItem="BbK-et-U1E" secondAttribute="bottom" constant="20" id="SIX-9P-hvK"/>
+                    <constraint firstAttribute="trailing" secondItem="BbK-et-U1E" secondAttribute="trailing" constant="20" id="bBd-7k-i5K"/>
+                    <constraint firstItem="BbK-et-U1E" firstAttribute="leading" secondItem="Wff-Lz-AFu" secondAttribute="leading" constant="20" id="fIO-WV-pqN"/>
                 </constraints>
             </collectionViewCellContentView>
             <size key="customSize" width="582" height="360"/>

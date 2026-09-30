@@ -109,6 +109,34 @@ final class Recorder {
         return record
     }
 
+    /// Download speed of the latest video fetches, each timed from its request to its last byte
+    /// (to now for one still running), as the routing estimate times them but without smoothing.
+    /// Fetches are added newest first until they hold a megabyte, since a small one is too quick
+    /// to time alone. Lost races don't count, and a running fetch counts once it has 256 KB, so
+    /// the wait for its first byte doesn't show as a dip.
+    func currentVideoMbps(now: TimeInterval = Recorder.now()) -> Double? {
+        Recorder.currentVideoMbps(in: records, now: now)
+    }
+
+    static func currentVideoMbps(in records: [RequestRecord], now: TimeInterval) -> Double? {
+        var bytes: Int64 = 0
+        var seconds: Double = 0
+        for record in records.reversed() where record.kind == .video && !record.isHeader && !record.lostRace {
+            if record.endedAt == nil, record.bytes < 256 * 1024 {
+                continue
+            }
+            let elapsed = (record.endedAt ?? now) - record.startedAt
+            guard record.bytes > 0, elapsed > 0 else { continue }
+            bytes += record.bytes
+            seconds += elapsed
+            if bytes >= 1_000_000 {
+                break
+            }
+        }
+        guard bytes > 0, seconds > 0 else { return nil }
+        return Double(bytes) * 8 / seconds / 1_000_000
+    }
+
     func received(_ record: RequestRecord, bytes: Int) {
         if record.firstByteAt == nil {
             record.firstByteAt = Recorder.now()

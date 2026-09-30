@@ -75,8 +75,15 @@ final class RoutingSession {
     private(set) var races: [Race] = []
     private var nextRaceAt: TimeInterval = 0
     private var lastCooldown: TimeInterval = 0
-    /// Set by a sustained shortfall: the next video request is served by a race.
+    /// Set by a sustained shortfall or a test from the panel: the next video request is served by
+    /// a race, which carries `raceNextTrigger`.
     var raceNext = false
+    private(set) var raceNextTrigger = "shortfall"
+    /// A test from the panel waits for the next video request.
+    private(set) var testPending = false
+    private(set) var lastTest: RouteStatus.Test = .none
+    /// The download speed once a second while this video plays, in Mbps, oldest first.
+    private(set) var recentMbps: [Double] = []
     var random: () -> Double = { Double.random(in: 0..<1) }
 
     init(key: String) {
@@ -125,7 +132,39 @@ final class RoutingSession {
         failures[host, default: []].append(now)
     }
 
+    func noteRateSample(_ mbps: Double) {
+        recentMbps.append(mbps)
+        if recentMbps.count > 30 {
+            recentMbps.removeFirst(recentMbps.count - 30)
+        }
+    }
+
     // MARK: - Races
+
+    /// A test asked for from the panel: the next video request is served by a race. The video
+    /// moves only if a challenger is clearly faster, as after any race, and nothing is kept once
+    /// the video ends.
+    func requestTest() {
+        testPending = true
+        raceNext = true
+        raceNextTrigger = "manual"
+    }
+
+    /// The trigger for a request served by a race because `raceNext` was set, which it clears.
+    func takeRaceNext() -> String {
+        let trigger = raceNextTrigger
+        raceNext = false
+        raceNextTrigger = "shortfall"
+        return trigger
+    }
+
+    /// A race that could not run: no other host can serve the video.
+    func noteRaceSkipped(trigger: String) {
+        if trigger == "manual" {
+            testPending = false
+            lastTest = .stayed
+        }
+    }
 
     /// Whether the engine may start a race of its own (a shortfall race). Rescuing a request that
     /// failed or got stuck is always allowed.
@@ -222,6 +261,10 @@ final class RoutingSession {
         } else {
             lastCooldown = min(Routing.maxCooldown, lastCooldown > 0 ? lastCooldown * 2 : Routing.noSwitchCooldown)
             nextRaceAt = now + lastCooldown
+        }
+        if trigger == "manual" {
+            testPending = false
+            lastTest = moved ? .moved(to: winner ?? from) : .stayed
         }
         races.append(Race(at: now, trigger: trigger, from: from, contenders: contenders, winner: winner, moved: moved))
         if races.count > 20 {

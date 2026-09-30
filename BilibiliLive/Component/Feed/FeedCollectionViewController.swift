@@ -98,7 +98,15 @@ class FeedCollectionViewController: UIViewController {
     var finished = false
     var pageSize = 20
     var showHeader: Bool = false
-    var headerText = ""
+    var headerText = "" {
+        didSet { refreshHeader() }
+    }
+
+    /// Gray text after the header, such as a count.
+    var headerDetail: String? {
+        didSet { refreshHeader() }
+    }
+
     var customHeaderConfig: FeedHeaderConfig?
 
     var displayDatas: [any DisplayData] {
@@ -169,21 +177,37 @@ class FeedCollectionViewController: UIViewController {
         }
     }
 
-    private func makeGridLayoutSection() -> NSCollectionLayoutSection {
-        var style = Settings.displayStyle
-        if parent?.parent is PersonalViewController {
-            style = .sideBar
-        }
+    private var style: FeedDisplayStyle {
         if let styleOverride {
-            style = styleOverride
+            return styleOverride
         }
+        if parent?.parent is PersonalViewController {
+            return .sideBar
+        }
+        return Settings.displayStyle
+    }
+
+    /// The distance from the collection view's leading edge to the first card.
+    private var cardLeading: CGFloat {
+        (style == .sideBar ? 24 : 0) + style.itemInset
+    }
+
+    private func refreshHeader() {
+        guard isViewLoaded else { return }
+        collectionView.visibleSupplementaryViews(ofKind: TitleSupplementaryView.reuseIdentifier)
+            .compactMap { $0 as? TitleSupplementaryView }
+            .forEach { $0.set(title: headerText, detail: headerDetail) }
+    }
+
+    private func makeGridLayoutSection() -> NSCollectionLayoutSection {
+        let style = style
 
         let heightDimension = NSCollectionLayoutDimension.estimated(style.heightEstimated)
         let item = NSCollectionLayoutItem(layoutSize: NSCollectionLayoutSize(
             widthDimension: .fractionalWidth(style.fractionalWidth),
             heightDimension: heightDimension
         ))
-        let hSpacing: CGFloat = style == .large ? 35 : 30
+        let hSpacing = style.itemInset
         item.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: hSpacing, bottom: 0, trailing: hSpacing)
         let group = NSCollectionLayoutGroup.horizontal(
             layoutSize: NSCollectionLayoutSize(
@@ -222,7 +246,8 @@ class FeedCollectionViewController: UIViewController {
         let supplementaryRegistration = UICollectionView.SupplementaryRegistration<TitleSupplementaryView>(elementKind: TitleSupplementaryView.reuseIdentifier) {
             [weak self] supplementaryView, string, indexPath in
             guard let self else { return }
-            supplementaryView.label.text = self.headerText
+            supplementaryView.leadingInset = self.cardLeading
+            supplementaryView.set(title: self.headerText, detail: self.headerDetail)
         }
 
         dataSource.supplementaryViewProvider = { [weak self] collectionView, kind, indexPath in
@@ -287,5 +312,10 @@ extension FeedDisplayStyle {
         case .normal: return 4
         case .large, .sideBar: return 3
         }
+    }
+
+    /// Horizontal inset on each side of a card, inside its column.
+    var itemInset: CGFloat {
+        self == .large ? 35 : 30
     }
 }

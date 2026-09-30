@@ -5,7 +5,7 @@
 import Kingfisher
 import UIKit
 
-class ReplyCell: UICollectionViewCell {
+class ReplyCell: BLMotionCollectionViewCell {
     class var identifier: String {
         return String(describing: Self.self)
     }
@@ -13,6 +13,35 @@ class ReplyCell: UICollectionViewCell {
     @IBOutlet var avatarImageView: UIImageView!
     @IBOutlet var userNameLabel: UILabel!
     @IBOutlet var contenLabel: UILabel!
+
+    private var card: BLCardView? {
+        contentView.subviews.first as? BLCardView
+    }
+
+    override func awakeFromNib() {
+        super.awakeFromNib()
+        scaleFactor = 1.04
+        userNameLabel.font = .systemFont(ofSize: 24, weight: .semibold)
+        contenLabel.font = .systemFont(ofSize: 24)
+        contenLabel.textAlignment = .natural
+        contenLabel.numberOfLines = 5
+        contenLabel.lineBreakMode = .byTruncatingTail
+        updateColors()
+    }
+
+    override func didUpdateFocus(in context: UIFocusUpdateContext, with coordinator: UIFocusAnimationCoordinator) {
+        super.didUpdateFocus(in: context, with: coordinator)
+        coordinator.addCoordinatedAnimations {
+            self.updateColors()
+        }
+    }
+
+    /// A white card with dark text when focused, as rows and buttons are elsewhere.
+    private func updateColors() {
+        card?.fill = isFocused ? Theme.focusedFill : BLCardView.restingFill
+        userNameLabel.textColor = isFocused ? Theme.focusedText : Theme.textPrimary
+        contenLabel.textColor = isFocused ? Theme.focusedText : Theme.textSecondary
+    }
 
     func config(replay: Replys.Reply) {
         avatarImageView.kf.setImage(
@@ -29,5 +58,6 @@ class ReplyCell: UICollectionViewCell {
         } else {
             contenLabel.text = replay.content.message
         }
+        updateColors()
     }
 }

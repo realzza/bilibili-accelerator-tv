@@ -46,8 +46,12 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
     #if DEBUG
         /// Commands from the accelerator's debug server, for driving tests from a Mac:
-        /// `play?aid=&cid=` (or `epid=`), `detail?aid=&cid=`, `stop`, `tab?index=`, `quality?qn=`,
-        /// `seek?to=<fraction of the duration>` and `accel?on=0|1`.
+        /// `play?aid=&cid=` (or `epid=`), `detail?aid=&cid=`, `stop`, `home` (the tab bar, even when
+        /// signed out), `tab?index=`, `quality?qn=`, `seek?to=<fraction of the duration>`, `accel?on=0|1`,
+        /// `route` (the 线路 tab on its own), `routetest` (its test button), `focus?x=&y=` (focus
+        /// what is at that point), `select` (press what has focus), `probe?class=&match=` (log a
+        /// class's methods) and `call?sel=&arg=` (send one to the player, such as
+        /// `displayInfoViewControllerWithIdentifier:` with `arg=线路` to open the info panel there).
         private static func handleDebugCommand(_ command: String, _ parameters: [String: String]) {
             switch command {
             case "seek":
@@ -69,12 +73,97 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
                     .present(from: UIViewController.topMostViewController(), direatlyEnterVideo: false)
             case "stop":
                 AppDelegate.shared.window?.rootViewController?.dismiss(animated: false)
+            case "home":
+                AppDelegate.shared.showTabBar()
             case "tab":
                 if let index = parameters["index"].flatMap(Int.init),
                    let tabs = AppDelegate.shared.window?.rootViewController as? UITabBarController,
                    index < (tabs.viewControllers?.count ?? 0)
                 {
                     tabs.selectedIndex = index
+                }
+            case "route":
+                // The 线路 tab on its own, over whatever is showing, to check it without a remote.
+                let panel = UIViewController()
+                panel.modalPresentationStyle = .overFullScreen
+                let backdrop = UIVisualEffectView(effect: UIBlurEffect(style: .dark))
+                backdrop.frame = CGRect(x: 80, y: 56, width: 1760, height: 290)
+                backdrop.layer.cornerRadius = 40
+                backdrop.clipsToBounds = true
+                panel.view.addSubview(backdrop)
+                let route = VideoPlayerRouteInfoViewController()
+                panel.addChild(route)
+                route.view.frame = backdrop.bounds.insetBy(dx: 0, dy: 20)
+                backdrop.contentView.addSubview(route.view)
+                route.didMove(toParent: panel)
+                UIViewController.topMostViewController().present(panel, animated: false)
+            case "routetest":
+                Accelerator.shared.testOtherHosts()
+            case "focus":
+                // Moves focus to the focusable view at a screen point, since there is no remote here.
+                guard let window = AppDelegate.shared.window,
+                      let x = parameters["x"].flatMap(Double.init), let y = parameters["y"].flatMap(Double.init)
+                else { return }
+                let point = CGPoint(x: x, y: y)
+                var target: UIView?
+                func visit(_ view: UIView) {
+                    guard !view.isHidden, view.alpha > 0.01 else { return }
+                    if view.canBecomeFocused, view.convert(view.bounds, to: window).contains(point) {
+                        target = view
+                    }
+                    view.subviews.forEach(visit)
+                }
+                visit(window)
+                guard let target else { return }
+                // tvOS ignores focus requests for views the screen doesn't prefer, so the top view
+                // controller prefers the target for one focus update.
+                let controller = UIViewController.topMostViewController()
+                DebugFocus.prefer(target, in: controller)
+            case "select":
+                // Presses the focused item, as the remote's select button would.
+                guard let window = AppDelegate.shared.window,
+                      let focused = UIFocusSystem.focusSystem(for: window)?.focusedItem as? UIView
+                else { return }
+                if let control = focused as? UIControl {
+                    control.sendActions(for: .primaryActionTriggered)
+                } else if let cell = focused as? UICollectionViewCell {
+                    var ancestor = cell.superview
+                    while let view = ancestor, !(view is UICollectionView) {
+                        ancestor = view.superview
+                    }
+                    guard let collectionView = ancestor as? UICollectionView,
+                          let indexPath = collectionView.indexPath(for: cell) else { return }
+                    collectionView.selectItem(at: indexPath, animated: false, scrollPosition: [])
+                    collectionView.delegate?.collectionView?(collectionView, didSelectItemAt: indexPath)
+                }
+            case "probe":
+                // Logs the methods of a class whose names contain `match`, for finding test hooks.
+                guard let name = parameters["class"], let cls = NSClassFromString(name) else { return }
+                let match = parameters["match"]?.lowercased() ?? ""
+                var count: UInt32 = 0
+                guard let methods = class_copyMethodList(cls, &count) else { return }
+                defer { free(methods) }
+                let names = (0..<Int(count)).map { NSStringFromSelector(method_getName(methods[$0])) }
+                    .filter { match.isEmpty || $0.lowercased().contains(match) }
+                NSLog("probe %@ %@: %@", name, match, names.sorted().joined(separator: " "))
+            case "call":
+                // Sends a selector, with `arg` as its one argument if given, to the playing AVPlayerViewController.
+                guard let name = parameters["sel"] else { return }
+                var pending = [UIViewController.topMostViewController()]
+                while let controller = pending.popLast() {
+                    if let playerVC = controller as? AVPlayerViewController {
+                        let selector = NSSelectorFromString(name)
+                        NSLog("call %@ responds=%d", name, playerVC.responds(to: selector) ? 1 : 0)
+                        if playerVC.responds(to: selector) {
+                            if let argument = parameters["arg"] {
+                                playerVC.perform(selector, with: argument)
+                            } else {
+                                playerVC.perform(selector)
+                            }
+                        }
+                        return
+                    }
+                    pending += controller.children
                 }
             case "accel":
                 let on = parameters["on"] != "0"
@@ -88,6 +177,35 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
                 }
             default:
                 Logger.warn("unknown debug command \(command)")
+            }
+        }
+
+        /// Makes a view controller prefer one view for the next focus update.
+        private enum DebugFocus {
+            weak static var target: UIView?
+            private static var patched = Set<ObjectIdentifier>()
+
+            static func prefer(_ view: UIView, in controller: UIViewController) {
+                patch(type(of: controller))
+                target = view
+                controller.setNeedsFocusUpdate()
+                controller.updateFocusIfNeeded()
+                target = nil
+            }
+
+            private static func patch(_ cls: AnyClass) {
+                guard patched.insert(ObjectIdentifier(cls)).inserted else { return }
+                let selector = #selector(getter: UIViewController.preferredFocusEnvironments)
+                guard let method = class_getInstanceMethod(cls, selector) else { return }
+                typealias Getter = @convention(c) (AnyObject, Selector) -> NSArray
+                let original = unsafeBitCast(method_getImplementation(method), to: Getter.self)
+                let replacement: @convention(block) (AnyObject) -> NSArray = { object in
+                    if let target = DebugFocus.target {
+                        return [target]
+                    }
+                    return original(object, selector)
+                }
+                class_replaceMethod(cls, selector, imp_implementationWithBlock(replacement), method_getTypeEncoding(method))
             }
         }
 

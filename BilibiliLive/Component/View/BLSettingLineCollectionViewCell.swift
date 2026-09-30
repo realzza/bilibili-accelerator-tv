@@ -7,9 +7,10 @@
 
 import UIKit
 
+/// A row in a sidebar list (直播 categories, 我的). Plain text at rest, a soft fill when it is the
+/// selected page, and the white tvOS highlight when focused.
 class BLSettingLineCollectionViewCell: BLMotionCollectionViewCell {
-    let effectView = UIVisualEffectView(effect: UIBlurEffect(style: .light))
-    let selectedWhiteView = UIView()
+    let fillView = UIView()
     let titleLabel = UILabel()
     override var isSelected: Bool {
         didSet {
@@ -19,51 +20,59 @@ class BLSettingLineCollectionViewCell: BLMotionCollectionViewCell {
 
     override func setup() {
         super.setup()
-        scaleFactor = 1.05
-        contentView.addSubview(effectView)
-        effectView.snp.makeConstraints { make in
+        scaleFactor = 1.04
+        contentView.addSubview(fillView)
+        fillView.snp.makeConstraints { make in
             make.edges.equalToSuperview()
         }
-        effectView.layer.cornerRadius = 10
-        effectView.layer.cornerCurve = .continuous
-        effectView.clipsToBounds = true
-        selectedWhiteView.backgroundColor = UIColor.white
-        selectedWhiteView.isHidden = !isFocused
-        effectView.contentView.addSubview(selectedWhiteView)
-        selectedWhiteView.snp.makeConstraints { make in
-            make.edges.equalToSuperview()
-        }
-        effectView.contentView.addSubview(titleLabel)
+        fillView.layer.cornerRadius = Theme.rowRadius
+        fillView.layer.cornerCurve = .continuous
+        contentView.addSubview(titleLabel)
         titleLabel.snp.makeConstraints { make in
-            make.leading.equalToSuperview().offset(26)
-            make.trailing.equalToSuperview().offset(20)
-            make.top.bottom.equalToSuperview().inset(8)
+            make.leading.equalToSuperview().offset(28)
+            make.trailing.equalToSuperview().offset(-20)
+            make.centerY.equalToSuperview()
         }
         titleLabel.textAlignment = .left
-        titleLabel.font = UIFont.systemFont(ofSize: 40, weight: .regular)
-        titleLabel.textColor = .black
+        updateView()
     }
 
     override func didUpdateFocus(in context: UIFocusUpdateContext, with coordinator: UIFocusAnimationCoordinator) {
         super.didUpdateFocus(in: context, with: coordinator)
-        updateView()
+        coordinator.addCoordinatedAnimations {
+            self.updateView()
+        }
     }
 
     func updateView() {
-        selectedWhiteView.isHidden = !(isFocused || isSelected)
+        if isFocused {
+            fillView.backgroundColor = Theme.focusedFill
+            titleLabel.textColor = Theme.focusedText
+            titleLabel.font = .systemFont(ofSize: 30, weight: .semibold)
+        } else if isSelected {
+            fillView.backgroundColor = Theme.selectedFill
+            titleLabel.textColor = Theme.textPrimary
+            titleLabel.font = .systemFont(ofSize: 30, weight: .semibold)
+        } else {
+            fillView.backgroundColor = .clear
+            titleLabel.textColor = Theme.textSecondary
+            titleLabel.font = .systemFont(ofSize: 30, weight: .medium)
+        }
     }
 
     static func makeLayout() -> UICollectionViewLayout {
-        let itemSize = NSCollectionLayoutSize(widthDimension: .fractionalWidth(0.9),
+        // Rows start at the safe margin, where the avatar of 我的 and the cards of other tabs start.
+        let itemSize = NSCollectionLayoutSize(widthDimension: .absolute(380),
                                               heightDimension: .fractionalHeight(1.0))
         let item = NSCollectionLayoutItem(layoutSize: itemSize)
 
         let groupSize = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1.0),
-                                               heightDimension: .absolute(70))
+                                               heightDimension: .absolute(68))
         let group = NSCollectionLayoutGroup.horizontal(layoutSize: groupSize,
                                                        subitems: [item])
-        group.edgeSpacing = .init(leading: nil, top: .fixed(10), trailing: nil, bottom: nil)
+        group.edgeSpacing = .init(leading: nil, top: .fixed(6), trailing: nil, bottom: nil)
         let section = NSCollectionLayoutSection(group: group)
+        section.contentInsets = NSDirectionalEdgeInsets(top: 20, leading: 0, bottom: 40, trailing: 0)
         let layout = UICollectionViewCompositionalLayout(section: section)
         return layout
     }

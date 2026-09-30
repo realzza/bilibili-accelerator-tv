@@ -168,6 +168,37 @@ final class ProxyEndToEndTests: XCTestCase {
         XCTAssertFalse(loser.failed)
     }
 
+    func testATestFromThePanelRacesTheNextFragment() throws {
+        let urls = (0..<3).map { cdn($0, "36277192946-1-100026.m4s") }
+        _ = try fetch(urls, range: "bytes=1000-99999")
+        var status = try XCTUnwrap(queue.sync { proxy.status(player: nil) })
+        XCTAssertEqual(status.host, "127.0.0.1:\(cdnPorts[0])")
+        XCTAssertTrue(status.isIssuedHost)
+        XCTAssertEqual(status.requiredMbps, 5)
+        XCTAssertEqual(status.test, .none)
+
+        queue.sync { proxy.requestTest() }
+        XCTAssertEqual(queue.sync { proxy.status(player: nil)?.test }, .pending)
+        let (body, _) = try fetch(urls, range: "bytes=100000-1099999")
+        XCTAssertEqual(body, blob.subdata(in: 100_000..<1_100_000))
+        let race = try XCTUnwrap(queue.sync { proxy.sessions["36277192946"]?.races.last })
+        XCTAssertEqual(race.trigger, "manual")
+        XCTAssertFalse(race.contenders.contains { $0.host == "127.0.0.1:\(cdnPorts[0])" })
+        status = try XCTUnwrap(queue.sync { proxy.status(player: nil) })
+        XCTAssertNotEqual(status.test, .pending)
+        XCTAssertEqual(status.switches, race.moved ? 1 : 0)
+    }
+
+    func testATestWithNoOtherHostServesTheFragmentNormally() throws {
+        let urls = [cdn(0, "36277192947-1-100026.m4s")]
+        _ = try fetch(urls, range: "bytes=1000-99999")
+        queue.sync { proxy.requestTest() }
+        let (body, _) = try fetch(urls, range: "bytes=100000-199999")
+        XCTAssertEqual(body, blob.subdata(in: 100_000..<200_000))
+        XCTAssertEqual(queue.sync { proxy.status(player: nil)?.test }, .stayed)
+        XCTAssertEqual(queue.sync { proxy.sessions["36277192947"]?.races.count }, 0)
+    }
+
     func testComesBackOnTheSamePortAfterTheSystemTearsTheListenerDown() throws {
         let port = proxyPort
         queue.sync { proxyServer.simulateSystemCancel() }

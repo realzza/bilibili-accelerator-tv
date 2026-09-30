@@ -101,6 +101,92 @@ final class RoutingSessionTests: XCTestCase {
         XCTAssertFalse(session.shortfall(rep: rep, requiredBps: 1_000_000, bufferAhead: 5))
     }
 
+    func testATestRacesTheNextFragmentAndKeepsItsOutcome() {
+        let session = session()
+        session.requestTest()
+        XCTAssertTrue(session.raceNext)
+        XCTAssertTrue(session.testPending)
+        XCTAssertEqual(session.takeRaceNext(), "manual")
+        XCTAssertFalse(session.raceNext)
+
+        // 20 Mbps on the current host: 768 KB takes it 0.31 s, so a winner must do it in 0.21 s.
+        session.noteCompleted(host: cosovHost, rep: rep, seconds: 1, bytes: 2_500_000)
+        session.conclude(trigger: "manual", rep: rep, from: cosovHost, stuckRateBps: 20_000_000, priorFailures: 0,
+                         raceBytes: 768 * 1024, contenders: [.init(host: aliHost, bytes: 768 * 1024, seconds: 0.3, ok: true)],
+                         winner: aliHost)
+        XCTAssertFalse(session.testPending)
+        XCTAssertEqual(session.lastTest, .stayed)
+        XCTAssertNil(session.activeHost)
+
+        session.requestTest()
+        XCTAssertEqual(session.takeRaceNext(), "manual")
+        session.conclude(trigger: "manual", rep: rep, from: cosovHost, stuckRateBps: 20_000_000, priorFailures: 0,
+                         raceBytes: 768 * 1024, contenders: [.init(host: hwHost, bytes: 768 * 1024, seconds: 0.1, ok: true)],
+                         winner: hwHost)
+        XCTAssertEqual(session.lastTest, .moved(to: hwHost))
+        XCTAssertEqual(session.activeHost, hwHost)
+    }
+
+    func testAShortfallRaceIsNotATest() {
+        let session = session()
+        session.raceNext = true
+        XCTAssertEqual(session.takeRaceNext(), "shortfall")
+        session.conclude(trigger: "shortfall", rep: rep, from: cosovHost, stuckRateBps: 0, priorFailures: 0,
+                         raceBytes: 768 * 1024, contenders: [.init(host: hwHost, bytes: 768 * 1024, seconds: 0.1, ok: true)],
+                         winner: hwHost)
+        XCTAssertEqual(session.lastTest, .none)
+    }
+
+    func testRateHistoryKeepsTheLastThirtySamples() {
+        let session = session()
+        for mbps in 1...40 {
+            session.noteRateSample(Double(mbps))
+        }
+        XCTAssertEqual(session.recentMbps.count, 30)
+        XCTAssertEqual(session.recentMbps.first, 11)
+        XCTAssertEqual(session.recentMbps.last, 40)
+    }
+
+    func testCurrentSpeedIsTheLatestMegabyteOfVideo() {
+        let audio = MediaRep(kind: .audio, id: 30280, bandwidth: 128_000, codecs: "mp4a", urls: rep.urls,
+                             preferred: rep.preferred, referer: "r")
+        var records: [RequestRecord] = []
+        func fetch(_ rep: MediaRep, bytes: Int64, from start: TimeInterval, to end: TimeInterval?) -> RequestRecord {
+            let record = RequestRecord(id: records.count, clientID: records.count, attempt: 0, host: cosovHost, rep: rep,
+                                       range: ByteRange(start: 1000, end: nil), startedAt: start)
+            record.firstByteAt = start
+            record.bytes = bytes
+            record.endedAt = end
+            records.append(record)
+            return record
+        }
+        func mbps(at now: TimeInterval) -> Double {
+            Recorder.currentVideoMbps(in: records, now: now) ?? 0
+        }
+        XCTAssertNil(Recorder.currentVideoMbps(in: records, now: 1))
+
+        // A big fetch is measured alone: 2.5 MB in a second.
+        _ = fetch(rep, bytes: 2_500_000, from: 10, to: 11)
+        XCTAssertEqual(mbps(at: 20), 20, accuracy: 0.001)
+
+        // Small ones are added up until they reach a megabyte: 3 x 400 KB in 3 x 0.1 s.
+        for index in 0..<3 {
+            _ = fetch(rep, bytes: 400_000, from: 12 + Double(index), to: 12.1 + Double(index))
+        }
+        XCTAssertEqual(mbps(at: 20), 32, accuracy: 0.001)
+
+        // Audio, lost races and a fetch still waiting for most of its bytes don't count.
+        _ = fetch(audio, bytes: 500_000, from: 16, to: 16.01)
+        let lost = fetch(rep, bytes: 900_000, from: 16, to: nil)
+        lost.lostRace = true
+        _ = fetch(rep, bytes: 10000, from: 19.9, to: nil)
+        XCTAssertEqual(mbps(at: 20), 32, accuracy: 0.001)
+
+        // One running with enough bytes counts up to now: 5 MB in its first second.
+        _ = fetch(rep, bytes: 5_000_000, from: 30, to: nil)
+        XCTAssertEqual(mbps(at: 31), 40, accuracy: 0.001)
+    }
+
     func testEstimatorFallsFastAndIgnoresTinySamples() {
         var estimator = Estimator()
         XCTAssertFalse(estimator.sample(duration: 0.1, bytes: 1000))
