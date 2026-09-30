@@ -32,6 +32,10 @@ class SettingsViewController: UIViewController {
         let title: String
         let desp: () -> String
         let action: ((@escaping () -> Void) -> Void)?
+        /// A line explaining the setting, shown before its value.
+        var note: String?
+        /// Draws 开 as a pink pill, for the setting this build is about.
+        var accentsOn = false
 
         var updateAction: (() -> Void)?
 
@@ -113,6 +117,32 @@ class SettingsViewController: UIViewController {
 
     private func setupData() {
         createSnapshot {
+            SectionModel(title: "音视频") {
+                Toggle(title: "线路加速（实验）", setting: Settings.acceleratorEnabled, onChange: Settings.acceleratorEnabled.toggle()) {
+                    enabled in
+                    Accelerator.shared.isEnabled = enabled
+                }
+                .with(note: "线路速度不足时，自动切换到更快的线路", accentsOn: true)
+                Actions(title: "最高画质", message: "4k以上需要大会员",
+                        current: Settings.mediaQuality.desp,
+                        options: MediaQualityEnum.allCases,
+                        optionString: MediaQualityEnum.allCases.map({ $0.desp }))
+                {
+                    Settings.mediaQuality = $0
+                }
+                Actions(title: "默认播放速度", message: "默认设置为1.0",
+                        current: Settings.mediaPlayerSpeed.name,
+                        options: PlaySpeed.blDefaults,
+                        optionString: PlaySpeed.blDefaults.map({ $0.name }))
+                {
+                    Settings.mediaPlayerSpeed = $0
+                }
+                Toggle(title: "Avc优先(卡顿尝试开启)", setting: Settings.preferAvc, onChange: Settings.preferAvc.toggle())
+                Toggle(title: "无损音频和杜比全景声", setting: Settings.losslessAudio, onChange: Settings.losslessAudio.toggle())
+                Toggle(title: "匹配视频内容", setting: Settings.contentMatch, onChange: Settings.contentMatch.toggle())
+                Toggle(title: "仅在HDR视频匹配视频内容", setting: Settings.contentMatchOnlyInHDR, onChange: Settings.contentMatchOnlyInHDR.toggle())
+            }
+
             SectionModel(title: "通用") {
                 Toggle(title: "启用投屏", setting: Settings.enableDLNA, onChange: Settings.enableDLNA.toggle()) {
                     _ in
@@ -173,31 +203,6 @@ class SettingsViewController: UIViewController {
                 { _ in
                     NotificationCenter.default.post(name: .followsLayoutModeDidChange, object: nil)
                 }
-            }
-
-            SectionModel(title: "音视频") {
-                Actions(title: "最高画质", message: "4k以上需要大会员",
-                        current: Settings.mediaQuality.desp,
-                        options: MediaQualityEnum.allCases,
-                        optionString: MediaQualityEnum.allCases.map({ $0.desp }))
-                {
-                    Settings.mediaQuality = $0
-                }
-                Actions(title: "默认播放速度", message: "默认设置为1.0",
-                        current: Settings.mediaPlayerSpeed.name,
-                        options: PlaySpeed.blDefaults,
-                        optionString: PlaySpeed.blDefaults.map({ $0.name }))
-                {
-                    Settings.mediaPlayerSpeed = $0
-                }
-                Toggle(title: "线路加速（实验）", setting: Settings.acceleratorEnabled, onChange: Settings.acceleratorEnabled.toggle()) {
-                    enabled in
-                    Accelerator.shared.isEnabled = enabled
-                }
-                Toggle(title: "Avc优先(卡顿尝试开启)", setting: Settings.preferAvc, onChange: Settings.preferAvc.toggle())
-                Toggle(title: "无损音频和杜比全景声", setting: Settings.losslessAudio, onChange: Settings.losslessAudio.toggle())
-                Toggle(title: "匹配视频内容", setting: Settings.contentMatch, onChange: Settings.contentMatch.toggle())
-                Toggle(title: "仅在HDR视频匹配视频内容", setting: Settings.contentMatchOnlyInHDR, onChange: Settings.contentMatchOnlyInHDR.toggle())
             }
 
             SectionModel(title: "进度控制") {
@@ -274,6 +279,14 @@ class SettingsViewController: UIViewController {
                 }
             }
         }
+    }
+}
+
+extension SettingsViewController.CellModel {
+    func with(note: String?, accentsOn: Bool = false) -> Self {
+        self.note = note
+        self.accentsOn = accentsOn
+        return self
     }
 }
 
@@ -372,7 +385,9 @@ extension SettingsViewController: UICollectionViewDelegate {
 
 class SettingsSwitchCell: BLMotionCollectionViewCell {
     private let titleLabel = UILabel()
-    private let descLabel = UILabel()
+    private let noteLabel = UILabel()
+    private let descLabel = PillLabel()
+    private var accentsOn = false
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -386,10 +401,15 @@ class SettingsSwitchCell: BLMotionCollectionViewCell {
 
     func set(with model: SettingsViewController.CellModel) {
         titleLabel.text = model.title
+        noteLabel.text = model.note
+        noteLabel.isHidden = model.note == nil
+        accentsOn = model.accentsOn
         descLabel.text = model.desp()
         model.updateAction = { [weak self] in
             self?.descLabel.text = model.desp()
+            self?.updateColor()
         }
+        updateColor()
     }
 
     override func didUpdateFocus(in context: UIFocusUpdateContext, with coordinator: UIFocusAnimationCoordinator) {
@@ -401,38 +421,55 @@ class SettingsSwitchCell: BLMotionCollectionViewCell {
 
     func setupView() {
         scaleFactor = 1.02
-        contentView.addSubview(titleLabel)
-        contentView.addSubview(descLabel)
         contentView.layer.cornerRadius = Theme.rowRadius
         contentView.layer.cornerCurve = .continuous
         titleLabel.font = .systemFont(ofSize: 28, weight: .medium)
+        noteLabel.font = .systemFont(ofSize: 23)
+        noteLabel.lineBreakMode = .byTruncatingHead
         descLabel.font = .systemFont(ofSize: 25)
+        descLabel.layer.cornerRadius = 16
+        descLabel.clipsToBounds = true
+
+        let trailing = UIStackView(arrangedSubviews: [noteLabel, descLabel])
+        trailing.spacing = 16
+        trailing.alignment = .center
+        contentView.addSubview(titleLabel)
+        contentView.addSubview(trailing)
 
         titleLabel.snp.makeConstraints { make in
             make.leading.equalToSuperview().offset(26)
             make.centerY.equalToSuperview()
-            make.trailing.lessThanOrEqualTo(descLabel.snp.leading).offset(-16)
+            make.trailing.lessThanOrEqualTo(trailing.snp.leading).offset(-24)
         }
 
-        descLabel.snp.makeConstraints { make in
+        trailing.snp.makeConstraints { make in
             make.trailing.equalToSuperview().offset(-26)
             make.centerY.equalToSuperview()
         }
 
+        titleLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
         descLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
+        noteLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
         updateColor()
     }
 
     func updateColor() {
+        let pill = accentsOn && descLabel.text == "开"
+        descLabel.insets = pill ? UIEdgeInsets(top: 4, left: 16, bottom: 4, right: 16) : .zero
+        descLabel.font = .systemFont(ofSize: 25, weight: pill ? .bold : .regular)
+        descLabel.invalidateIntrinsicContentSize()
+        descLabel.backgroundColor = pill ? Theme.accent : .clear
         if isFocused {
             contentView.backgroundColor = Theme.focusedFill
             titleLabel.textColor = Theme.focusedText
-            descLabel.textColor = Theme.focusedText.withAlphaComponent(0.72)
+            noteLabel.textColor = Theme.focusedText.withAlphaComponent(0.72)
+            descLabel.textColor = pill ? Theme.onAccent : Theme.focusedText.withAlphaComponent(0.72)
         } else {
             contentView.backgroundColor = .clear
             titleLabel.textColor = Theme.textPrimary
-            descLabel.textColor = Theme.textSecondary
+            noteLabel.textColor = Theme.textTertiary
+            descLabel.textColor = pill ? Theme.onAccent : Theme.textSecondary
         }
     }
 }
