@@ -7,21 +7,31 @@ import Kingfisher
 import UIKit
 
 /// The featured video at the top of 推荐: its cover as a backdrop that fades into the ground,
-/// the reason it was recommended, the title, one line of metadata and three actions.
+/// the reason it was recommended, the title, one line of metadata, the description and the
+/// actions, with the grid's own title under them.
 final class HeroHeaderView: UICollectionReusableView {
-    static let height: CGFloat = 660
+    /// Short enough that the first row of cards, with its titles, fits on the first screen.
+    static let height: CGFloat = 600
 
     var onPlay: (() -> Void)?
     var onDetail: (() -> Void)?
+    var onWatchLater: (() -> Void)?
     var onUpSpace: (() -> Void)?
 
     let playButton = HeroHeaderView.makeButton(title: "播放", symbol: "play.fill")
+    private let watchLaterButton = HeroHeaderView.makeButton(title: "稍后再看", symbol: "clock")
     private let detailButton = HeroHeaderView.makeButton(title: "详情", symbol: "info.circle")
     private let upButton = HeroHeaderView.makeButton(title: "UP 主页", symbol: "person.crop.circle")
     private let backdrop = BackdropView()
     private let kickerLabel = UILabel()
     private let titleLabel = UILabel()
     private let metaLabel = UILabel()
+    private let descriptionLabel = UILabel()
+    private let sectionLabel = UILabel()
+
+    var isInWatchLater = false {
+        didSet { watchLaterButton.setNeedsUpdateConfiguration() }
+    }
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -40,32 +50,54 @@ final class HeroHeaderView: UICollectionReusableView {
 
         addSubview(backdrop)
 
-        kickerLabel.font = .systemFont(ofSize: 24, weight: .semibold)
+        kickerLabel.font = .systemFont(ofSize: 22, weight: .semibold)
         kickerLabel.textColor = Theme.accent
+
         titleLabel.font = .systemFont(ofSize: 60, weight: .bold)
         titleLabel.textColor = Theme.textPrimary
         titleLabel.numberOfLines = 2
-        metaLabel.font = .systemFont(ofSize: 26)
+        metaLabel.font = .systemFont(ofSize: 24)
         metaLabel.textColor = Theme.textSecondary
+        descriptionLabel.font = .systemFont(ofSize: 24)
+        descriptionLabel.textColor = Theme.textSecondary
+        descriptionLabel.numberOfLines = 2
 
         playButton.addAction(UIAction { [weak self] _ in self?.onPlay?() }, for: .primaryActionTriggered)
+        watchLaterButton.addAction(UIAction { [weak self] _ in self?.onWatchLater?() }, for: .primaryActionTriggered)
         detailButton.addAction(UIAction { [weak self] _ in self?.onDetail?() }, for: .primaryActionTriggered)
         upButton.addAction(UIAction { [weak self] _ in self?.onUpSpace?() }, for: .primaryActionTriggered)
-        let buttons = UIStackView(arrangedSubviews: [playButton, detailButton, upButton])
+        watchLaterButton.configurationUpdateHandler = { [weak self] button in
+            let added = self?.isInWatchLater ?? false
+            button.configuration?.title = added ? "已加入稍后再看" : "稍后再看"
+            button.configuration?.image = UIImage(systemName: added ? "checkmark" : "clock")
+        }
+        let buttons = UIStackView(arrangedSubviews: [playButton, watchLaterButton, detailButton, upButton])
         buttons.axis = .horizontal
-        buttons.spacing = 24
+        buttons.spacing = 20
 
-        let stack = UIStackView(arrangedSubviews: [kickerLabel, titleLabel, metaLabel, buttons])
+        let stack = UIStackView(arrangedSubviews: [kickerLabel, titleLabel, metaLabel, descriptionLabel, buttons])
         stack.axis = .vertical
         stack.alignment = .leading
         stack.spacing = 18
-        stack.setCustomSpacing(36, after: metaLabel)
+        stack.setCustomSpacing(12, after: kickerLabel)
+        stack.setCustomSpacing(36, after: descriptionLabel)
         addSubview(stack)
+
+        sectionLabel.text = "为你推荐"
+        sectionLabel.font = .systemFont(ofSize: 30, weight: .semibold)
+        sectionLabel.textColor = Theme.textPrimary
+        addSubview(sectionLabel)
+
+        // Line the text up with the first card of the grid below.
+        let inset = Settings.displayStyle.itemInset
+        sectionLabel.snp.makeConstraints { make in
+            make.leading.equalToSuperview().offset(inset)
+            make.bottom.equalToSuperview().offset(-8)
+        }
         stack.snp.makeConstraints { make in
-            // Line the text up with the first card of the grid below.
-            make.leading.equalToSuperview().offset(Settings.displayStyle.itemInset)
-            make.width.lessThanOrEqualTo(920)
-            make.bottom.equalToSuperview().offset(-72)
+            make.leading.equalToSuperview().offset(inset)
+            make.width.lessThanOrEqualTo(960)
+            make.bottom.equalTo(sectionLabel.snp.top).offset(-96)
         }
     }
 
@@ -79,14 +111,19 @@ final class HeroHeaderView: UICollectionReusableView {
             top = collectionView.adjustedContentInset.top + frame.minY
             right = max(0, collectionView.bounds.maxX - frame.maxX)
         }
-        let left = bounds.width * 0.28
-        backdrop.frame = CGRect(x: left, y: -top, width: bounds.width - left + right, height: bounds.height - 24 + top)
+        let left = bounds.width * 0.26
+        backdrop.frame = CGRect(x: left, y: -top, width: bounds.width - left + right, height: bounds.height + top)
     }
 
-    func configure(title: String, kicker: String?, meta: String, cover: URL?, hasUpSpace: Bool) {
+    /// `kicker` is why the video was picked; `meta` and `description` may arrive later, once the
+    /// video's details load.
+    func configure(title: String, kicker: String?, meta: String, description: String?, cover: URL?, hasUpSpace: Bool) {
         titleLabel.text = title
-        kickerLabel.text = kicker ?? "为你推荐"
+        kickerLabel.text = kicker ?? "今日推荐"
         metaLabel.text = meta
+        let description = description?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        descriptionLabel.text = description
+        descriptionLabel.isHidden = description.isEmpty || description == "-"
         upButton.isHidden = !hasUpSpace
         if var cover {
             if cover.scheme == nil {
@@ -102,8 +139,8 @@ final class HeroHeaderView: UICollectionReusableView {
         config.title = title
         config.image = UIImage(systemName: symbol)
         config.imagePadding = 12
-        config.contentInsets = NSDirectionalEdgeInsets(top: 18, leading: 36, bottom: 18, trailing: 36)
-        config.setTitleFont(.systemFont(ofSize: 28, weight: .semibold))
+        config.contentInsets = NSDirectionalEdgeInsets(top: 18, leading: 32, bottom: 18, trailing: 32)
+        config.setTitleFont(.systemFont(ofSize: 26, weight: .semibold))
         return UIButton(configuration: config)
     }
 }

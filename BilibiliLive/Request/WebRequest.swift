@@ -432,6 +432,17 @@ extension WebRequest {
         }
     }
 
+    /// Adds the video to 稍后再看, or takes it off. Returns whether that worked.
+    static func requestToView(aid: Int, add: Bool) async -> Bool {
+        let url = add ? "https://api.bilibili.com/x/v2/history/toview/add" : "https://api.bilibili.com/x/v2/history/toview/del"
+        do {
+            _ = try await requestJSON(method: .post, url: url, parameters: ["aid": aid])
+            return true
+        } catch {
+            return false
+        }
+    }
+
     static func requestLikeStatus(aid: Int, complete: ((Bool) -> Void)?) {
         requestJSON(url: EndPoint.likeStatus, parameters: ["aid": aid]) {
             response in
