@@ -101,6 +101,54 @@ final class RoutingSessionTests: XCTestCase {
         XCTAssertFalse(session.shortfall(rep: rep, requiredBps: 1_000_000, bufferAhead: 5))
     }
 
+    func testATestRacesTheNextFragmentAndKeepsItsOutcome() {
+        let session = session()
+        session.requestTest()
+        XCTAssertTrue(session.raceNext)
+        XCTAssertTrue(session.testPending)
+        XCTAssertEqual(session.takeRaceNext(), "manual")
+        XCTAssertFalse(session.raceNext)
+
+        // 20 Mbps on the current host: 768 KB takes it 0.31 s, so a winner must do it in 0.21 s.
+        session.noteCompleted(host: cosovHost, rep: rep, seconds: 1, bytes: 2_500_000)
+        session.conclude(trigger: "manual", rep: rep, from: cosovHost, stuckRateBps: 20_000_000, priorFailures: 0,
+                         raceBytes: 768 * 1024, contenders: [.init(host: aliHost, bytes: 768 * 1024, seconds: 0.3, ok: true)],
+                         winner: aliHost)
+        XCTAssertFalse(session.testPending)
+        XCTAssertEqual(session.lastTest, .stayed)
+        XCTAssertNil(session.activeHost)
+
+        session.requestTest()
+        XCTAssertEqual(session.takeRaceNext(), "manual")
+        session.conclude(trigger: "manual", rep: rep, from: cosovHost, stuckRateBps: 20_000_000, priorFailures: 0,
+                         raceBytes: 768 * 1024, contenders: [.init(host: hwHost, bytes: 768 * 1024, seconds: 0.1, ok: true)],
+                         winner: hwHost)
+        XCTAssertEqual(session.lastTest, .moved(to: hwHost))
+        XCTAssertEqual(session.activeHost, hwHost)
+    }
+
+    func testAShortfallRaceIsNotATest() {
+        let session = session()
+        session.raceNext = true
+        XCTAssertEqual(session.takeRaceNext(), "shortfall")
+        session.conclude(trigger: "shortfall", rep: rep, from: cosovHost, stuckRateBps: 0, priorFailures: 0,
+                         raceBytes: 768 * 1024, contenders: [.init(host: hwHost, bytes: 768 * 1024, seconds: 0.1, ok: true)],
+                         winner: hwHost)
+        XCTAssertEqual(session.lastTest, .none)
+    }
+
+    func testRecentRatesKeepTheLastThirtyFragments() {
+        let session = session()
+        for mbps in 1...40 {
+            session.noteCompleted(host: cosovHost, rep: rep, seconds: 1, bytes: Int64(mbps) * 125_000)
+        }
+        // Too small to measure.
+        session.noteCompleted(host: cosovHost, rep: rep, seconds: 1, bytes: 1000)
+        XCTAssertEqual(session.recentMbps.count, 30)
+        XCTAssertEqual(session.recentMbps.first ?? 0, 11, accuracy: 0.001)
+        XCTAssertEqual(session.recentMbps.last ?? 0, 40, accuracy: 0.001)
+    }
+
     func testEstimatorFallsFastAndIgnoresTinySamples() {
         var estimator = Estimator()
         XCTAssertFalse(estimator.sample(duration: 0.1, bytes: 1000))

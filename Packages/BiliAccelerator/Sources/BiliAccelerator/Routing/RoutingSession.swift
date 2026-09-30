@@ -75,8 +75,15 @@ final class RoutingSession {
     private(set) var races: [Race] = []
     private var nextRaceAt: TimeInterval = 0
     private var lastCooldown: TimeInterval = 0
-    /// Set by a sustained shortfall: the next video request is served by a race.
+    /// Set by a sustained shortfall or a test from the panel: the next video request is served by
+    /// a race, which carries `raceNextTrigger`.
     var raceNext = false
+    private(set) var raceNextTrigger = "shortfall"
+    /// A test from the panel waits for the next video request.
+    private(set) var testPending = false
+    private(set) var lastTest: RouteStatus.Test = .none
+    /// Rates of the last video fragments, in Mbps, oldest first.
+    private(set) var recentMbps: [Double] = []
     var random: () -> Double = { Double.random(in: 0..<1) }
 
     init(key: String) {
@@ -108,7 +115,12 @@ final class RoutingSession {
     /// A video fragment that arrived whole.
     func noteCompleted(host: String, rep: MediaRep, seconds: Double, bytes: Int64) {
         guard rep.kind == .video else { return }
-        estimators[host, default: Estimator()].sample(duration: seconds, bytes: bytes)
+        if estimators[host, default: Estimator()].sample(duration: seconds, bytes: bytes) {
+            recentMbps.append(Double(bytes) * 8 / seconds / 1_000_000)
+            if recentMbps.count > 30 {
+                recentMbps.removeFirst(recentMbps.count - 30)
+            }
+        }
         carried[host, default: 0] += bytes
         if host == currentHost(for: rep) {
             activeCarriedBytes += bytes
@@ -126,6 +138,31 @@ final class RoutingSession {
     }
 
     // MARK: - Races
+
+    /// A test asked for from the panel: the next video request is served by a race. The video
+    /// moves only if a challenger is clearly faster, as after any race, and nothing is kept once
+    /// the video ends.
+    func requestTest() {
+        testPending = true
+        raceNext = true
+        raceNextTrigger = "manual"
+    }
+
+    /// The trigger for a request served by a race because `raceNext` was set, which it clears.
+    func takeRaceNext() -> String {
+        let trigger = raceNextTrigger
+        raceNext = false
+        raceNextTrigger = "shortfall"
+        return trigger
+    }
+
+    /// A race that could not run: no other host can serve the video.
+    func noteRaceSkipped(trigger: String) {
+        if trigger == "manual" {
+            testPending = false
+            lastTest = .stayed
+        }
+    }
 
     /// Whether the engine may start a race of its own (a shortfall race). Rescuing a request that
     /// failed or got stuck is always allowed.
@@ -222,6 +259,10 @@ final class RoutingSession {
         } else {
             lastCooldown = min(Routing.maxCooldown, lastCooldown > 0 ? lastCooldown * 2 : Routing.noSwitchCooldown)
             nextRaceAt = now + lastCooldown
+        }
+        if trigger == "manual" {
+            testPending = false
+            lastTest = moved ? .moved(to: winner ?? from) : .stayed
         }
         races.append(Race(at: now, trigger: trigger, from: from, contenders: contenders, winner: winner, moved: moved))
         if races.count > 20 {

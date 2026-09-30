@@ -30,6 +30,8 @@ final class MediaProxy {
     var appActive = true
     var resumedAt: TimeInterval = 0
     private(set) var sessions: [String: RoutingSession] = [:]
+    /// The video the player asked for last, which is the one playing.
+    private var current: (session: RoutingSession, rep: MediaRep)?
     private var transfers: [ObjectIdentifier: ProxyTransfer] = [:]
     private var ticker: DispatchSourceTimer?
 
@@ -50,6 +52,9 @@ final class MediaProxy {
             return
         }
         let session = session(for: rep)
+        if rep.kind == .video {
+            current = (session, rep)
+        }
         let transfer = ProxyTransfer(proxy: self, rep: rep, session: session, range: request.range,
                                      response: response, clientID: recorder.nextClientID())
         let key = ObjectIdentifier(transfer)
@@ -57,13 +62,30 @@ final class MediaProxy {
         transfer.onDone = { [weak self] in
             self?.transfers[key] = nil
         }
-        // A shortfall flagged on the last fragment: this one is served by a race.
-        let race = session.raceNext && rep.kind == .video && (request.range?.start ?? 0) > 0
-        if race {
-            session.raceNext = false
-        }
-        transfer.start(race: race)
+        // A shortfall flagged on the last fragment, or a test: this one is served by a race.
+        let raced = session.raceNext && rep.kind == .video && (request.range?.start ?? 0) > 0
+        transfer.start(raceTrigger: raced ? session.takeRaceNext() : nil)
         startTicker()
+    }
+
+    /// Races the next fragment of the video playing now.
+    func requestTest() {
+        current?.session.requestTest()
+    }
+
+    func status(player: PlayerProbe.Snapshot?) -> RouteStatus? {
+        guard let (session, rep) = current else { return nil }
+        let host = session.currentHost(for: rep)
+        let required = recorder.requiredBps
+        return RouteStatus(host: host,
+                           isIssuedHost: host == Candidates.key(rep.preferred),
+                           switches: session.switches.count,
+                           mbps: session.estimate(host).map { $0 / 1_000_000 },
+                           recentMbps: session.recentMbps,
+                           bufferSeconds: bufferAhead,
+                           requiredMbps: required > 0 ? Double(required) / 1_000_000 : nil,
+                           isStalled: player?.timeControl == "waiting",
+                           test: session.testPending ? .pending : session.lastTest)
     }
 
     /// Routing state is per video, so a quality switch keeps the host a race moved to and a new
@@ -183,13 +205,20 @@ final class ProxyTransfer {
         (requested?.start ?? 0) == 0
     }
 
-    func start(race startWithRace: Bool) {
+    /// Starts on the video's host, or with a race between two others when `raceTrigger` is set
+    /// and there are others to race.
+    func start(raceTrigger: String?) {
         response?.onClientGone = { [weak self] in
             self?.clientGone()
         }
         let current = session.currentHost(for: rep)
-        if startWithRace {
-            startRace(trigger: "shortfall", from: current, stuckRate: session.estimate(current) ?? 0, priorFailures: 0)
+        var raceTrigger = raceTrigger
+        if let trigger = raceTrigger, session.pickChallengers(for: rep, current: current, excluding: []).isEmpty {
+            session.noteRaceSkipped(trigger: trigger)
+            raceTrigger = nil
+        }
+        if let raceTrigger {
+            startRace(trigger: raceTrigger, from: current, stuckRate: session.estimate(current) ?? 0, priorFailures: 0)
         } else {
             let contender = makeContender(url: session.url(for: rep))
             active = contender
