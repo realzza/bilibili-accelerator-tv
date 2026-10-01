@@ -94,6 +94,7 @@ final class FollowsGridViewController: StandardVideoCollectionViewController<Dyn
 
     override func setupCollectionView() {
         super.setupCollectionView()
+        collectionVC.emptyContent = .init(title: "关注的 UP 主最近没有新视频", symbol: "person.2")
         collectionVC.pageSize = 1
     }
 

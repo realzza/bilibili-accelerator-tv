@@ -32,6 +32,7 @@ class LiveViewController: CategoryViewController {
 class MyLiveViewController: StandardVideoCollectionViewController<LiveRoom> {
     override func setupCollectionView() {
         super.setupCollectionView()
+        collectionVC.emptyContent = .init(title: "关注的主播都没有开播", message: "开播后会出现在这里。", symbol: "dot.radiowaves.left.and.right")
         collectionVC.styleOverride = .sideBar
         collectionVC.pageSize = 10
         collectionVC.showHeader = true
@@ -66,6 +67,7 @@ class AreaLiveViewController: StandardVideoCollectionViewController<AreaLiveRoom
 
     override func setupCollectionView() {
         super.setupCollectionView()
+        collectionVC.emptyContent = .init(title: "这个分区暂时没有直播", symbol: "dot.radiowaves.left.and.right")
         collectionVC.styleOverride = .sideBar
         collectionVC.pageSize = 10
         reloadInterval = 15 * 60

@@ -53,6 +53,7 @@ class FavoriteVideoContentViewController: StandardVideoCollectionViewController<
     override func setupCollectionView() {
         collectionVC.styleOverride = .sideBar
         super.setupCollectionView()
+        collectionVC.emptyContent = .init(title: "收藏夹是空的", symbol: "star")
     }
 
     override func request(page: Int) async throws -> [FavData] {

@@ -12,6 +12,7 @@ import UIKit
 class ToViewViewController: StandardVideoCollectionViewController<ToViewData> {
     override func setupCollectionView() {
         super.setupCollectionView()
+        collectionVC.emptyContent = .init(title: "稍后再看是空的", message: "在视频页按「稍后看」，视频会出现在这里。", symbol: "clock")
         collectionVC.didSelect = { [weak self] record in
             guard let self,
                   let record = record as? ToViewData
