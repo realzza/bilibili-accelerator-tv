@@ -31,7 +31,7 @@ class UpSpaceViewController: StandardVideoCollectionViewController<ApiRequest.Up
             headerView.nameLabel.text = self?.info?.name ?? "-"
             headerView.despLabel.text = self?.info?.sign ?? "-"
             if let avatar = self?.info?.avatar(size: 240) {
-                headerView.imageView.kf.setImage(with: avatar, options: [.processor(DownsamplingImageProcessor(size: CGSize(width: 80, height: 80))), .processor(RoundCornerImageProcessor(radius: .widthFraction(0.5))), .cacheSerializer(FormatIndicatedCacheSerializer.png)])
+                headerView.imageView.kf.setImage(with: avatar, options: [.processor(DownsamplingImageProcessor(size: CGSize(width: 240, height: 240)))])
             }
             headerView.mid = self?.mid
             headerView.followButton.isOn = self?.info?.is_followed ?? false
