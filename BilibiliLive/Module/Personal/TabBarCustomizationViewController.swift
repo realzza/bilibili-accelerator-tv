@@ -25,19 +25,29 @@ class TabBarCustomizationViewController: UIViewController {
 
     // MARK: - Views
 
-    private let hintLabel: UILabel = {
+    private let titleLabel: UILabel = {
         let label = UILabel()
-        label.font = .preferredFont(forTextStyle: .footnote)
-        label.textColor = UIColor.white
+        label.text = "自定义标签栏"
+        label.font = .systemFont(ofSize: 44, weight: .bold)
+        label.textColor = Theme.textPrimary
         return label
     }()
 
-    private let restoreDefaultButton: BLCustomTextButton = {
-        let button = BLCustomTextButton()
-        button.title = "恢复默认"
-        button.titleFont = .systemFont(ofSize: 30, weight: .semibold)
-        button.titleColor = UIColor.white
-        return button
+    private let hintLabel: UILabel = {
+        let label = UILabel()
+        label.font = .systemFont(ofSize: 24)
+        label.textColor = Theme.textSecondary
+        return label
+    }()
+
+    private let restoreDefaultButton: UIButton = {
+        var config = UIButton.Configuration.capsule()
+        config.title = "恢复默认"
+        config.image = UIImage(systemName: "arrow.counterclockwise")
+        config.imagePadding = 12
+        config.contentInsets = NSDirectionalEdgeInsets(top: 16, leading: 32, bottom: 16, trailing: 32)
+        config.setTitleFont(.systemFont(ofSize: 26, weight: .semibold))
+        return UIButton(configuration: config)
     }()
 
     private lazy var collectionView: UICollectionView = {
@@ -89,7 +99,7 @@ class TabBarCustomizationViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         title = "选中项目后按播放键开始排序"
-        view.backgroundColor = .black
+        view.backgroundColor = Theme.background
 
         setupUI()
         reloadPlacementsFromSettings()
@@ -192,13 +202,18 @@ class TabBarCustomizationViewController: UIViewController {
     // MARK: - UI helpers
 
     private func setupUI() {
+        view.addSubview(titleLabel)
         view.addSubview(hintLabel)
         view.addSubview(restoreDefaultButton)
         view.addSubview(collectionView)
         restoreDefaultButton.addTarget(self, action: #selector(didTapRestoreDefault), for: .primaryActionTriggered)
 
-        hintLabel.snp.makeConstraints { make in
+        titleLabel.snp.makeConstraints { make in
             make.top.equalTo(view.safeAreaLayoutGuide.snp.top).offset(12)
+            make.leading.equalToSuperview().offset(80)
+        }
+        hintLabel.snp.makeConstraints { make in
+            make.top.equalTo(titleLabel.snp.bottom).offset(10)
             make.leading.equalToSuperview().offset(80)
             make.trailing.lessThanOrEqualTo(restoreDefaultButton.snp.leading).offset(-24)
         }
@@ -214,13 +229,12 @@ class TabBarCustomizationViewController: UIViewController {
         focusGuide.preferredFocusEnvironments = [restoreDefaultButton]
 
         restoreDefaultButton.snp.makeConstraints { make in
-            make.top.equalTo(view.safeAreaLayoutGuide.snp.top).offset(4)
+            make.centerY.equalTo(titleLabel)
             make.trailing.equalToSuperview().offset(-80)
-            make.height.equalTo(72)
         }
 
         collectionView.snp.makeConstraints { make in
-            make.top.equalTo(hintLabel.snp.bottom).offset(12)
+            make.top.equalTo(hintLabel.snp.bottom).offset(28)
             make.top.greaterThanOrEqualTo(restoreDefaultButton.snp.bottom).offset(12)
             make.bottom.equalTo(view.safeAreaLayoutGuide.snp.bottom)
             make.leading.equalToSuperview().offset(80)
@@ -420,7 +434,7 @@ class TabBarTileCell: BLMotionCollectionViewCell {
     }
 
     private func setupView() {
-        contentView.layer.cornerRadius = 16
+        contentView.layer.cornerRadius = Theme.rowRadius
         contentView.layer.cornerCurve = .continuous
         contentView.clipsToBounds = true
 
@@ -446,14 +460,19 @@ class TabBarTileCell: BLMotionCollectionViewCell {
         }
     }
 
+    /// White when focused, pink while being moved, the theme's card fill otherwise.
     private func updateAppearance() {
-        if isFocused {
-            contentView.backgroundColor = .white
-            titleLabel.textColor = .black
+        if isBeingEdited {
+            contentView.backgroundColor = Theme.accent
+            titleLabel.textColor = Theme.onAccent
+            layer.shadowOpacity = 0.3
+        } else if isFocused {
+            contentView.backgroundColor = Theme.focusedFill
+            titleLabel.textColor = Theme.focusedText
             layer.shadowOpacity = 0.3
         } else {
-            contentView.backgroundColor = UIColor(white: 0.15, alpha: 1)
-            titleLabel.textColor = .white
+            contentView.backgroundColor = UIColor(white: 1, alpha: 0.08)
+            titleLabel.textColor = Theme.textPrimary
             layer.shadowOpacity = 0
         }
     }
@@ -466,8 +485,8 @@ class TabBarSectionHeaderView: UICollectionReusableView {
 
     let label: UILabel = {
         let l = UILabel()
-        l.font = .systemFont(ofSize: 30, weight: .bold)
-        l.textColor = .white
+        l.font = .systemFont(ofSize: 24, weight: .semibold)
+        l.textColor = Theme.textTertiary
         return l
     }()
 
