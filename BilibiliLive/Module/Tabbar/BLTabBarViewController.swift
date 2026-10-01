@@ -45,13 +45,15 @@ class BLTabBarViewController: UITabBarController, UITabBarControllerDelegate {
     }
 
     private func reloadTabs(animated: Bool) {
+        // On launch, the tab the viewer last used, or 推荐 the first time.
         let previousPage = selectedViewController?.tabBarItem.accessibilityIdentifier
+            ?? Settings.lastTabPage ?? TabBarPage.feed.rawValue
         let pages = Settings.tabBarPages
         let controllers = pages.map { controller(for: $0) }
 
         setViewControllers(controllers, animated: animated)
 
-        if let previousPage, let index = controllers.firstIndex(where: { $0.tabBarItem.accessibilityIdentifier == previousPage }) {
+        if let index = controllers.firstIndex(where: { $0.tabBarItem.accessibilityIdentifier == previousPage }) {
             selectedIndex = index
         }
     }
@@ -65,6 +67,10 @@ class BLTabBarViewController: UITabBarController, UITabBarControllerDelegate {
             }
         }
         tabBar.standardAppearance = appearance
+    }
+
+    func tabBarController(_ tabBarController: UITabBarController, didSelect viewController: UIViewController) {
+        Settings.lastTabPage = viewController.tabBarItem.accessibilityIdentifier
     }
 
     private func controller(for page: TabBarPage) -> UIViewController {

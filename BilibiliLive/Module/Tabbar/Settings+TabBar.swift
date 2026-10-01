@@ -30,6 +30,10 @@ extension Settings {
     @UserDefaultCodable("Settings.tabBarPagePlacements", defaultValue: [])
     static var tabBarPagePlacements: [TabBarPagePlacement]
 
+    /// The tab open when the app last left, to open on next launch.
+    @UserDefault("Settings.lastTabPage", defaultValue: nil)
+    static var lastTabPage: String?
+
     // 导航栏
     static var tabBarPages: [TabBarPage] {
         normalizedPlacements.filter { $0.section == .tabBar }.map(\.page)
