@@ -121,6 +121,7 @@ class FeedCollectionViewCell: BLMotionCollectionViewCell {
         durationLabel.isHidden = (facts.duration ?? "").isEmpty
         viewsLabel.attributedText = facts.views.map(Self.viewsText)
         viewsLabel.isHidden = facts.views == nil
+        progress = data.watchProgress
         if let badge = data.overlay?.badge, !badge.text.isEmpty {
             badgeLabel.text = badge.text
             badgeLabel.backgroundColor = badge.color ?? Theme.accent

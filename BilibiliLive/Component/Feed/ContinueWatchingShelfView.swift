@@ -17,8 +17,8 @@ struct ContinueWatchingItem: DisplayData {
     let position: Int
     let duration: Int
 
-    var progress: Double {
-        duration > 0 ? Double(position) / Double(duration) : 0
+    var watchProgress: Double? {
+        duration > 0 ? Double(position) / Double(duration) : nil
     }
 
     /// `还剩 5 分钟`, in the metadata line where a card puts its date.
@@ -122,7 +122,6 @@ extension ContinueWatchingShelfView: UICollectionViewDataSource, UICollectionVie
         let cell = collectionView.dequeueReusableCell(withReuseIdentifier: "cell", for: indexPath) as! FeedCollectionViewCell
         let item = items[indexPath.item]
         cell.setup(data: item)
-        cell.progress = item.progress
         return cell
     }
 
