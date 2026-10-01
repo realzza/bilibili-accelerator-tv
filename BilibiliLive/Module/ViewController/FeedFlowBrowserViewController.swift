@@ -264,7 +264,7 @@ class FeedFlowBrowserViewController: UIViewController, BLTabBarContentVCProtocol
             previewLoadingView.stopAnimating()
             emptyStateLabel.text = dataSource.loadFailureText
             emptyStateLabel.isHidden = false
-            previewHintLabel.text = "\(error)"
+            previewHintLabel.text = error.localizedDescription
         }
     }
 
@@ -294,7 +294,7 @@ class FeedFlowBrowserViewController: UIViewController, BLTabBarContentVCProtocol
                 previewLoadingView.stopAnimating()
                 emptyStateLabel.text = dataSource.loadFailureText
                 emptyStateLabel.isHidden = false
-                previewHintLabel.text = "\(error)"
+                previewHintLabel.text = error.localizedDescription
             }
         }
     }

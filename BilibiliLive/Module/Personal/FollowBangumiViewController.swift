@@ -32,6 +32,7 @@ class BangumiListViewController: StandardVideoCollectionViewController<FollowBan
 
     override func setupCollectionView() {
         super.setupCollectionView()
+        collectionVC.emptyContent = .init(title: "还没有追番追剧", symbol: "tv")
         collectionVC.styleOverride = .normal
         collectionVC.pageSize = 24
         collectionVC.loadViewIfNeeded()

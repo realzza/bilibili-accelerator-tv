@@ -21,6 +21,7 @@ class UpSpaceViewController: StandardVideoCollectionViewController<ApiRequest.Up
 
     override func setupCollectionView() {
         super.setupCollectionView()
+        collectionVC.emptyContent = .init(title: "这位 UP 主还没有投稿", symbol: "person.crop.rectangle")
         setupBlockedMessageLabel()
         collectionVC.showHeader = true
         collectionVC.customHeaderConfig = FeedHeaderConfig(

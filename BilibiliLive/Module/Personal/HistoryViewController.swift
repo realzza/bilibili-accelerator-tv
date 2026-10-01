@@ -14,10 +14,19 @@ class HistoryViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         collectionVC.show(in: self)
+        collectionVC.emptyContent = .init(title: "还没有观看记录", symbol: "clock.arrow.circlepath")
+        collectionVC.stateView.onRetry = { [weak self] in
+            self?.reloadData()
+        }
         collectionVC.didSelect = {
             [weak self] in
-            self?.goDetail(with: $0 as! HistoryData)
+            guard let history = $0 as? HistoryData else { return }
+            self?.goDetail(with: history)
         }
+    }
+
+    override var preferredFocusEnvironments: [UIFocusEnvironment] {
+        [collectionVC]
     }
 
     func goDetail(with history: HistoryData) {
@@ -33,8 +42,15 @@ class HistoryViewController: UIViewController {
 
 extension HistoryViewController: BLTabBarContentVCProtocol {
     func reloadData() {
-        WebRequest.requestHistory { [weak self] datas in
-            self?.collectionVC.displayDatas = datas
+        collectionVC.setState(.loading)
+        Task { [weak self] in
+            do {
+                let datas = try await WebRequest.requestHistory()
+                self?.collectionVC.displayDatas = datas
+                self?.collectionVC.settleState()
+            } catch {
+                self?.collectionVC.setState(.failed(error))
+            }
         }
     }
 }

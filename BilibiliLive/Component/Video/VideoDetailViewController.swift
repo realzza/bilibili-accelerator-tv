@@ -247,8 +247,9 @@ class VideoDetailViewController: UIViewController {
 
     private func exit(with error: Error) {
         Logger.warn(error)
-        let alertVC = UIAlertController(title: "获取失败", message: error.localizedDescription, preferredStyle: .alert)
-        alertVC.addAction(UIAlertAction(title: "Ok", style: .cancel, handler: { [weak self] action in
+        let presentation = ErrorPresentation(error)
+        let alertVC = UIAlertController(title: presentation.title, message: presentation.message, preferredStyle: .alert)
+        alertVC.addAction(UIAlertAction(title: "好", style: .cancel, handler: { [weak self] action in
             self?.dismiss(animated: true)
         }))
         present(alertVC, animated: true, completion: nil)
