@@ -4,14 +4,21 @@
 //
 
 import Kingfisher
+import SnapKit
 import UIKit
 
 /// The featured video at the top of 推荐: its cover as a backdrop that fades into the ground,
 /// the reason it was recommended, the title, one line of metadata, the description and the
-/// actions, with the grid's own title under them.
+/// actions; then 继续观看 when there is something to resume, and the grid's own title.
 final class HeroHeaderView: UICollectionReusableView {
     /// Short enough that the first row of cards, with its titles, fits on the first screen.
     static let height: CGFloat = 600
+    /// What 继续观看 adds below the featured video.
+    private static let shelfExtra: CGFloat = ContinueWatchingShelfView.height + 48
+
+    static func height(showingShelf: Bool) -> CGFloat {
+        showingShelf ? height + shelfExtra : height
+    }
 
     var onPlay: (() -> Void)?
     var onDetail: (() -> Void)?
@@ -28,6 +35,10 @@ final class HeroHeaderView: UICollectionReusableView {
     private let metaLabel = UILabel()
     private let descriptionLabel = UILabel()
     private let sectionLabel = UILabel()
+    let shelf = ContinueWatchingShelfView()
+    private var heightConstraint: Constraint?
+    private var shelfHeightConstraint: Constraint?
+    private var shelfBottomConstraint: Constraint?
 
     var isInWatchLater = false {
         didSet { watchLaterButton.setNeedsUpdateConfiguration() }
@@ -45,7 +56,7 @@ final class HeroHeaderView: UICollectionReusableView {
 
     private func setup() {
         snp.makeConstraints { make in
-            make.height.equalTo(HeroHeaderView.height).priority(.high)
+            heightConstraint = make.height.equalTo(HeroHeaderView.height).priority(.high).constraint
         }
 
         addSubview(backdrop)
@@ -94,11 +105,32 @@ final class HeroHeaderView: UICollectionReusableView {
             make.leading.equalToSuperview().offset(inset)
             make.bottom.equalToSuperview().offset(-8)
         }
+        addSubview(shelf)
+        shelf.isHidden = true
+        shelf.snp.makeConstraints { make in
+            make.leading.trailing.equalToSuperview()
+            shelfHeightConstraint = make.height.equalTo(0).constraint
+            shelfBottomConstraint = make.bottom.equalTo(sectionLabel.snp.top).constraint
+        }
         stack.snp.makeConstraints { make in
             make.leading.equalToSuperview().offset(inset)
             make.width.lessThanOrEqualTo(960)
-            make.bottom.equalTo(sectionLabel.snp.top).offset(-96)
+            make.bottom.equalTo(shelf.snp.top).offset(-96)
         }
+    }
+
+    /// Shows 继续观看 with `items`, or hides it when there are none. Returns whether the
+    /// header's height changed, so the grid can lay out again.
+    @discardableResult
+    func setContinueWatching(_ items: [ContinueWatchingItem]) -> Bool {
+        let show = !items.isEmpty
+        shelf.update(items: items)
+        let changed = shelf.isHidden == show
+        shelf.isHidden = !show
+        shelfHeightConstraint?.update(offset: show ? ContinueWatchingShelfView.height : 0)
+        shelfBottomConstraint?.update(offset: show ? -48 : 0)
+        heightConstraint?.update(offset: Self.height(showingShelf: show))
+        return changed
     }
 
     override func layoutSubviews() {
@@ -112,7 +144,9 @@ final class HeroHeaderView: UICollectionReusableView {
             right = max(0, collectionView.bounds.maxX - frame.maxX)
         }
         let left = bounds.width * 0.26
-        backdrop.frame = CGRect(x: left, y: -top, width: bounds.width - left + right, height: bounds.height + top)
+        // The art ends a little below the actions, above 继续观看 when it shows.
+        let bottom = shelf.isHidden ? bounds.height : shelf.frame.minY + 40
+        backdrop.frame = CGRect(x: left, y: -top, width: bounds.width - left + right, height: bottom + top)
     }
 
     /// `kicker` is why the video was picked; `meta` and `description` may arrive later, once the
