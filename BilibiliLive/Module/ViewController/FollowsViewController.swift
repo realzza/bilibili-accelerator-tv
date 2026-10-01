@@ -6,6 +6,7 @@
 //
 
 import Alamofire
+import Kingfisher
 import SnapKit
 import SwiftyJSON
 import UIKit
@@ -64,7 +65,7 @@ final class FollowsViewController: UIViewController, BLTabBarContentVCProtocol {
         case .feedFlow:
             targetViewController = FollowsFeedFlowViewController()
         case .grid:
-            targetViewController = FollowsGridViewController()
+            targetViewController = FollowsSubscriptionsViewController()
         }
 
         transition(to: targetViewController)
@@ -85,6 +86,184 @@ final class FollowsViewController: UIViewController, BLTabBarContentVCProtocol {
         previousViewController.willMove(toParent: nil)
         previousViewController.view.removeFromSuperview()
         previousViewController.removeFromParent()
+    }
+}
+
+/// 关注 as subscriptions: the uploaders you follow down the side, recently updated first, and on
+/// the right either everyone's new videos (全部动态) or the selected uploader's.
+final class FollowsSubscriptionsViewController: UIViewController, BLTabBarContentVCProtocol {
+    private enum Row: Hashable {
+        case all
+        case up(WebRequest.FollowedUp)
+    }
+
+    private var rows: [Row] = [.all]
+    private let sidebar = UICollectionView(frame: .zero, collectionViewLayout: BLSettingLineCollectionViewCell.makeLayout())
+    private let contentView = UIView()
+    private lazy var allFeed: FollowsGridViewController = {
+        let feed = FollowsGridViewController()
+        feed.collectionVC.styleOverride = .sideBar
+        return feed
+    }()
+
+    private weak var current: UIViewController?
+    private var selectedRow: Row = .all
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        sidebar.register(FollowUpSidebarCell.self, forCellWithReuseIdentifier: "cell")
+        sidebar.dataSource = self
+        sidebar.delegate = self
+        sidebar.remembersLastFocusedIndexPath = true
+        view.addSubview(sidebar)
+        sidebar.snp.makeConstraints { make in
+            make.leading.bottom.equalToSuperview()
+            make.top.equalTo(view.safeAreaLayoutGuide.snp.top)
+            make.width.equalTo(500)
+        }
+        view.addSubview(contentView)
+        contentView.snp.makeConstraints { make in
+            make.top.equalTo(view.safeAreaLayoutGuide.snp.top)
+            make.bottom.trailing.equalToSuperview()
+            make.leading.equalTo(sidebar.snp.trailing)
+        }
+        show(allFeed)
+        sidebar.selectItem(at: IndexPath(item: 0, section: 0), animated: false, scrollPosition: [])
+        loadUps()
+    }
+
+    override var preferredFocusEnvironments: [UIFocusEnvironment] {
+        [current, sidebar].compactMap { $0 }
+    }
+
+    func reloadData() {
+        (current as? BLTabBarContentVCProtocol)?.reloadData()
+        loadUps()
+    }
+
+    private func loadUps() {
+        Task { [weak self] in
+            guard let ups = try? await WebRequest.requestFollowedUps(), let self else { return }
+            rows = [.all] + ups.map { .up($0) }
+            sidebar.reloadData()
+            if let index = rows.firstIndex(of: selectedRow) {
+                sidebar.selectItem(at: IndexPath(item: index, section: 0), animated: false, scrollPosition: [])
+            }
+        }
+    }
+
+    private func select(_ row: Row) {
+        guard row != selectedRow || current == nil else { return }
+        selectedRow = row
+        switch row {
+        case .all:
+            show(allFeed)
+        case let .up(up):
+            let space = UpSpaceViewController()
+            space.mid = up.mid
+            space.collectionVC.styleOverride = .sideBar
+            show(space)
+        }
+    }
+
+    private func show(_ controller: UIViewController) {
+        guard controller !== current else { return }
+        if let current {
+            current.willMove(toParent: nil)
+            current.view.removeFromSuperview()
+            current.removeFromParent()
+        }
+        addChild(controller)
+        contentView.addSubview(controller.view)
+        controller.view.snp.makeConstraints { make in
+            make.edges.equalToSuperview()
+        }
+        controller.didMove(toParent: self)
+        current = controller
+    }
+}
+
+extension FollowsSubscriptionsViewController: UICollectionViewDataSource, UICollectionViewDelegate {
+    func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int {
+        rows.count
+    }
+
+    func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
+        let cell = collectionView.dequeueReusableCell(withReuseIdentifier: "cell", for: indexPath) as! FollowUpSidebarCell
+        switch rows[indexPath.item] {
+        case .all:
+            cell.configure(title: "全部动态", avatar: nil, symbol: "square.grid.2x2", hasUpdate: false)
+        case let .up(up):
+            cell.configure(title: up.name, avatar: up.face, symbol: nil, hasUpdate: up.hasUpdate)
+        }
+        return cell
+    }
+
+    func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
+        select(rows[indexPath.item])
+    }
+
+    func collectionView(_ collectionView: UICollectionView, didUpdateFocusIn context: UICollectionViewFocusUpdateContext, with coordinator: UIFocusAnimationCoordinator) {
+        guard Settings.sideMenuAutoSelectChange, let indexPath = context.nextFocusedIndexPath else { return }
+        collectionView.selectItem(at: indexPath, animated: true, scrollPosition: [])
+        select(rows[indexPath.item])
+    }
+}
+
+/// A sidebar row for an uploader: avatar, name, and a pink dot when they have posted since you
+/// last looked.
+final class FollowUpSidebarCell: BLSettingLineCollectionViewCell {
+    private let avatarView = UIImageView()
+    private let updateDot = UIView()
+
+    override func setup() {
+        super.setup()
+        contentView.addSubview(avatarView)
+        avatarView.snp.makeConstraints { make in
+            make.leading.equalToSuperview().offset(18)
+            make.centerY.equalToSuperview()
+            make.size.equalTo(44)
+        }
+        avatarView.layer.cornerRadius = 22
+        avatarView.clipsToBounds = true
+        avatarView.contentMode = .scaleAspectFill
+        avatarView.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 24, weight: .semibold)
+        contentView.addSubview(updateDot)
+        updateDot.backgroundColor = Theme.accent
+        updateDot.layer.cornerRadius = 6
+        updateDot.snp.makeConstraints { make in
+            make.size.equalTo(12)
+            make.trailing.equalToSuperview().offset(-22)
+            make.centerY.equalToSuperview()
+        }
+        titleLabel.snp.remakeConstraints { make in
+            make.leading.equalTo(avatarView.snp.trailing).offset(16)
+            make.trailing.equalTo(updateDot.snp.leading).offset(-12)
+            make.centerY.equalToSuperview()
+        }
+    }
+
+    func configure(title: String, avatar: URL?, symbol: String?, hasUpdate: Bool) {
+        titleLabel.text = title
+        updateDot.isHidden = !hasUpdate
+        avatarView.kf.cancelDownloadTask()
+        if let symbol {
+            avatarView.image = UIImage(systemName: symbol)
+            avatarView.contentMode = .center
+            avatarView.backgroundColor = .clear
+        } else {
+            avatarView.image = nil
+            avatarView.contentMode = .scaleAspectFill
+            avatarView.backgroundColor = Theme.groupedFill
+            avatarView.kf.setImage(with: avatar, options: [.processor(DownsamplingImageProcessor(size: CGSize(width: 88, height: 88)))])
+        }
+        updateView()
+    }
+
+    override func updateView() {
+        super.updateView()
+        titleLabel.font = .systemFont(ofSize: 28, weight: isFocused || isSelected ? .semibold : .medium)
+        avatarView.tintColor = isFocused ? Theme.focusedText : Theme.textSecondary
     }
 }
 
@@ -431,6 +610,37 @@ struct DynamicFeedData: Codable, PlayableData, DisplayData {
                     }
                 }
             }
+        }
+    }
+}
+
+extension WebRequest {
+    struct FollowedUp: Hashable {
+        let mid: Int
+        let name: String
+        let face: URL?
+        let hasUpdate: Bool
+    }
+
+    /// The uploaders you follow, those with new posts first, as the dynamics page lists them;
+    /// the plain following list if that fails.
+    static func requestFollowedUps() async throws -> [FollowedUp] {
+        struct Item: Decodable {
+            let mid: Int
+            let uname: String
+            let face: URL?
+            let has_update: Bool?
+        }
+        struct Portal: Decodable {
+            let up_list: [Item]?
+        }
+        if let portal: Portal = try? await request(url: "https://api.bilibili.com/x/polymer/web-dynamic/v1/portal"),
+           let list = portal.up_list, !list.isEmpty
+        {
+            return list.map { FollowedUp(mid: $0.mid, name: $0.uname, face: $0.face, hasUpdate: $0.has_update ?? false) }
+        }
+        return try await requestFollowing(page: 1).map {
+            FollowedUp(mid: $0.mid, name: $0.uname, face: $0.face, hasUpdate: false)
         }
     }
 }
