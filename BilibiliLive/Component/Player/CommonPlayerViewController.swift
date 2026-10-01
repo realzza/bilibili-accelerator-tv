@@ -238,6 +238,18 @@ extension CommonPlayerViewController: AVPlayerViewControllerDelegate {
         return false
     }
 
+    func playerViewController(_ playerViewController: AVPlayerViewController, shouldPresent proposal: AVContentProposal) -> Bool {
+        activePlugins.contains { $0.playerShouldPresent(contentProposal: proposal) }
+    }
+
+    func playerViewController(_ playerViewController: AVPlayerViewController, didAccept proposal: AVContentProposal) {
+        activePlugins.forEach { $0.playerDidAccept(contentProposal: proposal) }
+    }
+
+    func playerViewController(_ playerViewController: AVPlayerViewController, didReject proposal: AVContentProposal) {
+        activePlugins.forEach { $0.playerDidReject(contentProposal: proposal) }
+    }
+
     @objc func playerViewControllerShouldAutomaticallyDismissAtPictureInPictureStart(_: AVPlayerViewController) -> Bool {
         return true
     }

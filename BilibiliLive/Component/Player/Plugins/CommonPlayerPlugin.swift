@@ -25,6 +25,11 @@ protocol CommonPlayerPlugin: NSObject {
     func playerDidStall(player: AVPlayer)
     func playerDidFail(player: AVPlayer)
     func playerDidCleanUp(player: AVPlayer)
+
+    /// Whether to show `proposal`, an Up Next card this plugin put on the item.
+    func playerShouldPresent(contentProposal: AVContentProposal) -> Bool
+    func playerDidAccept(contentProposal: AVContentProposal)
+    func playerDidReject(contentProposal: AVContentProposal)
 }
 
 extension CommonPlayerPlugin {
@@ -38,6 +43,10 @@ extension CommonPlayerPlugin {
     func playerDidStall(player: AVPlayer) {}
     func playerDidFail(player: AVPlayer) {}
     func playerDidCleanUp(player: AVPlayer) {}
+
+    func playerShouldPresent(contentProposal: AVContentProposal) -> Bool { false }
+    func playerDidAccept(contentProposal: AVContentProposal) {}
+    func playerDidReject(contentProposal: AVContentProposal) {}
 
     func playerDidLoad(playerVC: AVPlayerViewController) {}
     func playerDidDismiss(playerVC: AVPlayerViewController) {}
