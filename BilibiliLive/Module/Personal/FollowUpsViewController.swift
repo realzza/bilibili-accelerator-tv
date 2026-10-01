@@ -113,6 +113,7 @@ extension FollowUpsViewController: UICollectionViewDelegate {
     }
 }
 
+/// An uploader: round avatar, name and signature on a card that turns white when focused.
 class UpCell: BLMotionCollectionViewCell {
     let imageView = UIImageView()
     let nameLabel = MarqueeLabel()
@@ -120,36 +121,40 @@ class UpCell: BLMotionCollectionViewCell {
 
     override func setup() {
         super.setup()
+        scaleFactor = 1.05
         contentView.addSubview(imageView)
         contentView.addSubview(nameLabel)
         contentView.addSubview(despLabel)
         nameLabel.holdScrolling = true
         imageView.snp.makeConstraints { make in
-            make.leading.top.equalToSuperview().offset(30)
-            make.bottom.equalToSuperview().offset(-30)
+            make.leading.equalToSuperview().offset(24)
+            make.top.equalToSuperview().offset(24)
+            make.bottom.equalToSuperview().offset(-24)
             make.width.equalTo(imageView.snp.height)
-            make.width.equalTo(80)
+            make.width.equalTo(88)
         }
+        imageView.layer.cornerRadius = 44
+        imageView.clipsToBounds = true
+        imageView.backgroundColor = Theme.groupedFill
 
         nameLabel.snp.makeConstraints { make in
-            make.leading.equalTo(imageView.snp.trailing).offset(20)
-            make.trailing.equalToSuperview().offset(-20)
-            make.trailing.equalToSuperview()
-            make.top.equalToSuperview().offset(30)
+            make.leading.equalTo(imageView.snp.trailing).offset(22)
+            make.trailing.equalToSuperview().offset(-24)
+            make.bottom.equalTo(imageView.snp.centerY).offset(-2)
         }
 
         despLabel.snp.makeConstraints { make in
-            make.leading.equalTo(nameLabel.snp.leading)
-            make.top.equalTo(nameLabel.snp.bottom).offset(20)
-            make.trailing.equalTo(nameLabel.snp.trailing).offset(-20)
+            make.leading.trailing.equalTo(nameLabel)
+            make.top.equalTo(imageView.snp.centerY).offset(6)
         }
 
-        nameLabel.font = UIFont.systemFont(ofSize: 30, weight: .semibold)
-        nameLabel.fadeLength = 60
-        despLabel.font = UIFont.systemFont(ofSize: 20, weight: .regular)
-        despLabel.textColor = UIColor(named: "titleColor")
-        contentView.backgroundColor = UIColor(named: "bgColor")
-        contentView.layer.cornerRadius = 16
+        nameLabel.font = .systemFont(ofSize: 28, weight: .semibold)
+        nameLabel.fadeLength = 40
+        despLabel.font = .systemFont(ofSize: 21)
+        despLabel.lineBreakMode = .byTruncatingTail
+        contentView.layer.cornerRadius = Theme.cardRadius
+        contentView.layer.cornerCurve = .continuous
+        updateColors()
     }
 
     override func didUpdateFocus(in context: UIFocusUpdateContext, with coordinator: UIFocusAnimationCoordinator) {
@@ -159,6 +164,15 @@ class UpCell: BLMotionCollectionViewCell {
         } else {
             stopScroll()
         }
+        coordinator.addCoordinatedAnimations {
+            self.updateColors()
+        }
+    }
+
+    private func updateColors() {
+        contentView.backgroundColor = isFocused ? Theme.focusedFill : Theme.groupedFill
+        nameLabel.textColor = isFocused ? Theme.focusedText : Theme.textPrimary
+        despLabel.textColor = isFocused ? Theme.focusedText.withAlphaComponent(0.7) : Theme.textTertiary
     }
 
     private func startScroll() {

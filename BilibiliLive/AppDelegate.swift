@@ -48,7 +48,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         /// Commands from the accelerator's debug server, for driving tests from a Mac:
         /// `play?aid=&cid=` (or `epid=`), `detail?aid=&cid=`, `stop`, `home` (the tab bar, even when
         /// signed out), `tab?index=`, `quality?qn=`, `seek?to=<fraction of the duration>`, `accel?on=0|1`,
-        /// `route` (the 线路 tab on its own), `routetest` (its test button), `focus?x=&y=` (focus
+        /// `search?q=` (the search tab with a query), `route` (the 线路 tab on its own), `routetest` (its test button), `focus?x=&y=` (focus
         /// what is at that point), `select` (press what has focus), `probe?class=&match=` (log a
         /// class's methods) and `call?sel=&arg=` (send one to the player, such as
         /// `displayInfoViewControllerWithIdentifier:` with `arg=线路` to open the info panel there).
@@ -119,6 +119,16 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
                 // controller prefers the target for one focus update.
                 let controller = UIViewController.topMostViewController()
                 DebugFocus.prefer(target, in: controller)
+            case "search":
+                // Opens the search tab with `q` typed, or empty without it.
+                guard let tabs = AppDelegate.shared.window?.rootViewController as? UITabBarController,
+                      let index = tabs.viewControllers?.firstIndex(where: { $0 is UISearchContainerViewController }),
+                      let container = tabs.viewControllers?[index] as? UISearchContainerViewController
+                else { return }
+                tabs.selectedIndex = index
+                let searchController = container.searchController
+                searchController.searchBar.text = parameters["q"] ?? ""
+                searchController.searchResultsUpdater?.updateSearchResults(for: searchController)
             case "select":
                 // Presses the focused item, as the remote's select button would.
                 guard let window = AppDelegate.shared.window,
