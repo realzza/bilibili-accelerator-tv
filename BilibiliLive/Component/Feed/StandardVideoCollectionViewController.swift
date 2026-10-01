@@ -19,7 +19,7 @@ class StandardVideoCollectionViewController<T: PlayableData>: UIViewController, 
     var reloading = false
     private var page = 0
     override var preferredFocusEnvironments: [UIFocusEnvironment] {
-        return [collectionVC.collectionView]
+        return [collectionVC]
     }
 
     override func viewDidLoad() {
@@ -44,6 +44,9 @@ class StandardVideoCollectionViewController<T: PlayableData>: UIViewController, 
         collectionVC.loadMore = {
             [weak self] in
             self?.loadMore()
+        }
+        collectionVC.stateView.onRetry = { [weak self] in
+            self?.reloadData()
         }
     }
 
@@ -74,14 +77,17 @@ class StandardVideoCollectionViewController<T: PlayableData>: UIViewController, 
         }
         lastReloadDate = Date()
         page = 1
+        collectionVC.setState(.loading)
         do {
             let res = try await request(page: 1)
             collectionVC.displayDatas = []
             collectionVC.appendData(displayData: res)
+            collectionVC.settleState()
+        } catch is CancellationError {
+            collectionVC.settleState()
         } catch let err {
-            let alert = UIAlertController(title: "Error", message: "\(err)", preferredStyle: .alert)
-            alert.addAction(.init(title: "Ok", style: .cancel))
-            present(alert, animated: true)
+            Logger.warn("load failed: \(err)")
+            collectionVC.setState(.failed(err))
         }
     }
 

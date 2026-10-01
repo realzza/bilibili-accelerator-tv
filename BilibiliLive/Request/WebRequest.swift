@@ -20,6 +20,29 @@ enum ValidationError: Error {
     case argumentInvalid(message: String)
 }
 
+/// Readable text wherever an error is shown as is, instead of "The operation couldn't be completed".
+extension RequestError: LocalizedError {
+    var errorDescription: String? {
+        switch self {
+        case .networkFail:
+            return "网络连接失败"
+        case let .statusFail(code, message):
+            return message.isEmpty ? "请求失败（\(code)）" : "\(message)（\(code)）"
+        case let .decodeFail(message):
+            return "数据解析失败：\(message)"
+        }
+    }
+}
+
+extension ValidationError: LocalizedError {
+    var errorDescription: String? {
+        switch self {
+        case let .argumentInvalid(message):
+            return message
+        }
+    }
+}
+
 struct PlayURLRequestOptions: Hashable {
     let qn: Int
     let fnval: Int
@@ -305,13 +328,8 @@ extension WebRequest {
         try await request(url: EndPoint.userEpisodeInfo, parameters: ["ep_id": epid])
     }
 
-    static func requestHistory(complete: (([HistoryData]) -> Void)?) {
-        request(url: "https://api.bilibili.com/x/v2/history") {
-            (result: Result<[HistoryData], RequestError>) in
-            if let data = try? result.get() {
-                complete?(data)
-            }
-        }
+    static func requestHistory() async throws -> [HistoryData] {
+        try await request(url: "https://api.bilibili.com/x/v2/history")
     }
 
     static func requestTopFeedRecommend(pageIndex: Int, pageSize: Int = 12) async throws -> WebTopFeedRecommendResponse {

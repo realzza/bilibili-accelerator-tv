@@ -166,6 +166,42 @@ class FeedCollectionViewController: UIViewController {
         }
         collectionView.dataSource = dataSource
         collectionView.delegate = self
+        view.addSubview(stateView)
+        stateView.snp.makeConstraints { make in
+            make.edges.equalToSuperview()
+        }
+    }
+
+    override var preferredFocusEnvironments: [UIFocusEnvironment] {
+        stateView.hasActions ? [stateView] : [collectionView]
+    }
+
+    // MARK: - State
+
+    /// Shown over the grid while it has no cards: loading, empty or failed.
+    let stateView = ContentStateView()
+
+    /// What the list says when a load returns nothing.
+    var emptyContent = ContentStateView.EmptyContent.generic
+
+    /// Shows the state over an empty grid; a grid with cards keeps them, so a failed refresh
+    /// doesn't wipe what is already on screen.
+    func setState(_ state: ContentStateView.State?) {
+        guard isViewLoaded else { return }
+        if state != nil, !_displayData.isEmpty {
+            stateView.state = nil
+            return
+        }
+        stateView.state = state
+        if stateView.hasActions {
+            setNeedsFocusUpdate()
+            updateFocusIfNeeded()
+        }
+    }
+
+    /// Shows the empty note if the last load left the grid empty, and hides any state otherwise.
+    func settleState() {
+        setState(_displayData.isEmpty ? .empty(emptyContent) : nil)
     }
 
     // MARK: - Private
