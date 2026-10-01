@@ -15,6 +15,9 @@ class VideoPlayListPlugin: NSObject, CommonPlayerPlugin {
     var onShowCurrentDetail: ((PlayInfo) -> Void)?
 
     let sequenceProvider: VideoSequenceProvider?
+    /// The Up Next card on the current item, and whether the viewer turned it down.
+    private var upNextProposal: AVContentProposal?
+    private var declinedNext = false
 
     init(sequenceProvider: VideoSequenceProvider?) {
         self.sequenceProvider = sequenceProvider
@@ -48,6 +51,47 @@ class VideoPlayListPlugin: NSObject, CommonPlayerPlugin {
         }
 
         playerVC.infoViewActions = actions
+        scheduleUpNext(on: player, next: next)
+    }
+
+    /// Offers the next video in the last seconds of this one, as the system's Up Next card.
+    private func scheduleUpNext(on player: AVPlayer, next: PlayInfo?) {
+        declinedNext = false
+        guard let item = player.currentItem else { return }
+        let duration = item.duration.seconds
+        guard Settings.continouslyPlay, let next, let playerVC, duration.isFinite, duration > 60 else {
+            item.nextContentProposal = nil
+            upNextProposal = nil
+            return
+        }
+        let lead = min(UpNextViewController.leadTime, duration * 0.1)
+        let proposal = AVContentProposal(contentTimeForTransition: CMTime(seconds: duration - lead, preferredTimescale: 600),
+                                         title: next.title ?? "下一个视频", previewImage: nil)
+        upNextProposal = proposal
+        item.nextContentProposal = proposal
+        playerVC.contentProposalViewController = UpNextViewController(next: next)
+    }
+
+    /// AVKit hands back its own copy of the proposal, so it is matched by title.
+    private func isUpNext(_ proposal: AVContentProposal) -> Bool {
+        upNextProposal?.title == proposal.title
+    }
+
+    func playerShouldPresent(contentProposal: AVContentProposal) -> Bool {
+        isUpNext(contentProposal)
+    }
+
+    func playerDidAccept(contentProposal: AVContentProposal) {
+        guard isUpNext(contentProposal) else { return }
+        upNextProposal = nil
+        Task { [weak self] in
+            _ = await self?.playNext()
+        }
+    }
+
+    func playerDidReject(contentProposal: AVContentProposal) {
+        guard isUpNext(contentProposal) else { return }
+        declinedNext = true
     }
 
     func addMenuItems(current: inout [UIMenuElement]) -> [UIMenuElement] {
@@ -84,7 +128,9 @@ class VideoPlayListPlugin: NSObject, CommonPlayerPlugin {
     func playerDidEnd(player: AVPlayer) {
         Task { [weak self] in
             guard let self else { return }
-            if !(await playNext()) {
+            // 连续播放 off, or the Up Next card turned down: this video is the last.
+            let advance = Settings.continouslyPlay && !declinedNext
+            if !(advance ? await playNext() : false) {
                 if Settings.loopPlay {
                     await MainActor.run {
                         self.sequenceProvider?.reset()

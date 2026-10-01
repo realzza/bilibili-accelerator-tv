@@ -58,6 +58,37 @@ class FeedViewController: StandardVideoCollectionViewController<ApiRequest.FeedR
     /// doesn't carry.
     private var heroDetail: VideoDetail?
     private var heroInWatchLater = false
+    /// Videos from history left part way, for 继续观看 under the featured video.
+    private var continueItems = [ContinueWatchingItem]()
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        // Again on every return, so a video just watched shows its new position.
+        loadContinueWatching()
+    }
+
+    private func loadContinueWatching() {
+        guard ApiRequest.isLogin() else { return }
+        Task { [weak self] in
+            guard let history = try? await WebRequest.requestHistory(), let self else { return }
+            let items = ContinueWatchingItem.from(history)
+            guard items != continueItems else { return }
+            continueItems = items
+            if let heroView {
+                applyContinueWatching(to: heroView)
+            }
+        }
+    }
+
+    private func applyContinueWatching(to view: HeroHeaderView) {
+        view.shelf.onSelect = { [weak self] item in
+            guard let self else { return }
+            VideoDetailViewController.create(aid: item.aid, cid: item.cid).present(from: self, direatlyEnterVideo: true)
+        }
+        if view.setContinueWatching(continueItems) {
+            collectionVC.collectionView.collectionViewLayout.invalidateLayout()
+        }
+    }
 
     private func refreshHero() {
         heroDetail = nil
@@ -89,6 +120,7 @@ class FeedViewController: StandardVideoCollectionViewController<ApiRequest.FeedR
             return
         }
         view.isHidden = false
+        applyContinueWatching(to: view)
         let facts = CardFacts(overlay: hero.overlay)
         var meta = [hero.ownerName, facts.views, facts.duration]
         if let info = heroDetail?.View {

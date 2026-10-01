@@ -23,6 +23,14 @@ class FeedCollectionViewCell: BLMotionCollectionViewCell {
     private let durationLabel = PillLabel()
     private let viewsLabel = PillLabel()
     private let badgeLabel = PillLabel()
+    private let progressTrack = UIView()
+    private let progressFill = UIView()
+
+    /// How much of the video was watched, 0 to 1, drawn along the bottom of the thumbnail in
+    /// place of the view count and duration. Nil hides it.
+    var progress: Double? {
+        didSet { updateProgress() }
+    }
 
     override var shadowLayer: CALayer {
         artwork.layer
@@ -64,6 +72,18 @@ class FeedCollectionViewCell: BLMotionCollectionViewCell {
             make.leading.bottom.equalToSuperview().inset(12)
             make.trailing.lessThanOrEqualTo(durationLabel.snp.leading).offset(-8)
         }
+
+        artwork.addSubview(progressTrack)
+        progressTrack.snp.makeConstraints { make in
+            make.leading.trailing.bottom.equalToSuperview().inset(14)
+            make.height.equalTo(6)
+        }
+        progressTrack.backgroundColor = UIColor(white: 1, alpha: 0.32)
+        progressTrack.layer.cornerRadius = 3
+        progressTrack.clipsToBounds = true
+        progressTrack.addSubview(progressFill)
+        progressFill.backgroundColor = Theme.accent
+        progressTrack.isHidden = true
 
         artwork.addSubview(badgeLabel)
         badgeLabel.snp.makeConstraints { make in
@@ -197,8 +217,23 @@ class FeedCollectionViewCell: BLMotionCollectionViewCell {
         onLongPress?()
     }
 
+    private func updateProgress() {
+        guard let progress else {
+            progressTrack.isHidden = true
+            return
+        }
+        progressTrack.isHidden = false
+        durationLabel.isHidden = true
+        viewsLabel.isHidden = true
+        progressFill.snp.remakeConstraints { make in
+            make.leading.top.bottom.equalToSuperview()
+            make.width.equalToSuperview().multipliedBy(min(max(progress, 0.02), 1))
+        }
+    }
+
     override func prepareForReuse() {
         super.prepareForReuse()
+        progress = nil
         onLongPress = nil
         imageView.kf.cancelDownloadTask()
         imageView.image = nil
