@@ -20,14 +20,25 @@ class SearchResultViewController: UIViewController {
         case bangumi(SearchResult.Bangumi)
         case user(SearchResult.User)
         case liveRoom(SearchLiveResult.Result.LiveRoom)
+        case term(SearchTerm)
+    }
+
+    /// A trending query, ranked. Past searches stay in the suggestion row under the keyboard.
+    struct SearchTerm: Hashable {
+        let rank: Int
+        let text: String
     }
 
     @Published var searchText: String = ""
     var cancellable: Cancellable?
     private let suggestDelayWork = DelayWork(delay: 1.0, noDelayForFirstTask: true)
     private var showHistorySuggest = false
-    private let hotSuggestLimit = 6
-    private var hotSuggestsCache: [SuggestEntry] = []
+    private var trendingCache: [SearchHotMobileResult.Item] = []
+    private weak var searchController: UISearchController?
+    private var searchTask: Task<Void, Never>?
+    /// The query of the search last started, so a debounced repeat of it is skipped.
+    private var lastSearchKey: String?
+    private let stateView = ContentStateView()
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -40,29 +51,97 @@ class SearchResultViewController: UIViewController {
             make.edges.equalToSuperview()
         }
         configureDataSource()
+        view.addSubview(stateView)
+        stateView.snp.makeConstraints { make in
+            make.edges.equalToSuperview()
+        }
+        stateView.onRetry = { [weak self] in
+            guard let self, !searchText.isEmpty else { return }
+            runSearch(searchText)
+        }
+        showDiscovery()
 
         cancellable = $searchText
             .filter({ $0.count > 0 })
-            .debounce(for: 1.5, scheduler: RunLoop.main)
+            .debounce(for: 1.0, scheduler: RunLoop.main)
             .removeDuplicates()
             .sink { [weak self] key in
-                guard let self else { return }
-                Task { @MainActor in
-                    await self.performSearch(key: key)
-                }
+                guard key != self?.lastSearchKey else { return }
+                self?.runSearch(key)
             }
+    }
+
+    override var preferredFocusEnvironments: [UIFocusEnvironment] {
+        stateView.hasActions ? [stateView] : [collectionView]
+    }
+
+    /// Searches for `key` now, replacing any search still running.
+    private func runSearch(_ key: String) {
+        lastSearchKey = key
+        searchTask?.cancel()
+        searchTask = Task { @MainActor [weak self] in
+            await self?.performSearch(key: key)
+        }
     }
 
     @MainActor
     private func performSearch(key: String) async {
+        currentSnapshot.deleteAllItems()
+        await dataSource.apply(currentSnapshot, animatingDifferences: false)
+        stateView.state = .loading
         // 使用 async let 并行请求
         async let searchResultTask = WebRequest.requestSearchResult(key: key)
         async let liveResultTask = WebRequest.requestSearchLiveResult(key: key)
 
-        let searchResult = try? await searchResultTask
+        var failure: Error?
+        var searchResult: SearchResult?
+        do { searchResult = try await searchResultTask } catch { failure = error }
         let liveResult = try? await liveResultTask
+        guard !Task.isCancelled, key == searchText else { return }
 
         updateSnapshot(searchResult: searchResult, liveResult: liveResult)
+        if currentSnapshot.numberOfItems > 0 {
+            stateView.state = nil
+        } else if let failure {
+            stateView.state = .failed(failure)
+        } else {
+            stateView.state = .empty(.init(title: "没有找到「\(key)」", message: "换个关键词试试。", symbol: "magnifyingglass"))
+        }
+    }
+
+    /// With nothing typed, what is trending.
+    @MainActor
+    private func showDiscovery() {
+        searchTask?.cancel()
+        lastSearchKey = nil
+        stateView.state = nil
+        var snapshot = NSDiffableDataSourceSnapshot<SearchList, Item>()
+        if !trendingCache.isEmpty {
+            let list = SearchList(title: "热搜", height: .absolute(SearchTermCell.rowHeight), scrollingBehavior: .none, kind: .ranking)
+            snapshot.appendSections([list])
+            snapshot.appendItems(trendingCache.enumerated().map {
+                .term(SearchTerm(rank: $0.offset + 1, text: $0.element.show_name))
+            }, toSection: list)
+        }
+        currentSnapshot = snapshot
+        dataSource.apply(snapshot, animatingDifferences: false)
+
+        guard trendingCache.isEmpty else { return }
+        Task { @MainActor [weak self] in
+            guard let items = try? await WebRequest.requestSearchHotMobile(limit: 20).list, !items.isEmpty,
+                  let self else { return }
+            trendingCache = items
+            if searchText.isEmpty {
+                showDiscovery()
+            }
+        }
+    }
+
+    private func select(_ term: SearchTerm) {
+        searchController?.searchBar.text = term.text
+        Settings.addHistory(term.text)
+        searchText = term.text
+        runSearch(term.text)
     }
 
     @MainActor
@@ -116,7 +195,14 @@ extension SearchResultViewController {
                 let sectionIdentifier = dataSource.snapshot().sectionIdentifiers[sectionIndex]
 
                 let section: NSCollectionLayoutSection
-                if sectionIdentifier.scrollingBehavior == .none {
+                if sectionIdentifier.kind == .ranking {
+                    let item = NSCollectionLayoutItem(layoutSize: NSCollectionLayoutSize(widthDimension: .fractionalWidth(0.5), heightDimension: .fractionalHeight(1)))
+                    item.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 30)
+                    let group = NSCollectionLayoutGroup.horizontal(layoutSize: NSCollectionLayoutSize(widthDimension: .fractionalWidth(1), heightDimension: sectionIdentifier.height), subitems: [item])
+                    section = NSCollectionLayoutSection(group: group)
+                    section.interGroupSpacing = 8
+                    section.contentInsets = NSDirectionalEdgeInsets(top: 24, leading: Self.cardInset, bottom: 40, trailing: 0)
+                } else if sectionIdentifier.scrollingBehavior == .none {
                     let groupSize = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1),
                                                            heightDimension: sectionIdentifier.height)
                     let itemSize = NSCollectionLayoutSize(widthDimension: sectionIdentifier.width,
@@ -161,9 +247,15 @@ extension SearchResultViewController {
         return layout
     }
 
+    /// The inset of a card inside its column, which section titles line up with.
+    static var cardInset: CGFloat { Settings.displayStyle.itemInset }
+
     private func configureDataSource() {
         let displayCell = UICollectionView.CellRegistration<FeedCollectionViewCell, any DisplayData> {
             $0.setup(data: $2)
+        }
+        let termCell = UICollectionView.CellRegistration<SearchTermCell, SearchTerm> {
+            $0.configure(with: $2)
         }
         let userCell = UICollectionView.CellRegistration<UpCell, SearchResult.User> {
             $0.nameLabel.text = $2.uname
@@ -181,14 +273,17 @@ extension SearchResultViewController {
                 return collectionView.dequeueConfiguredReusableCell(using: userCell, for: indexPath, item: item)
             case let .liveRoom(item):
                 return collectionView.dequeueConfiguredReusableCell(using: displayCell, for: indexPath, item: item)
+            case let .term(term):
+                return collectionView.dequeueConfiguredReusableCell(using: termCell, for: indexPath, item: term)
             }
         }
 
         let supplementaryRegistration = UICollectionView.SupplementaryRegistration<TitleSupplementaryView>(elementKind: FavoriteViewController.titleElementKind) {
             supplementaryView, string, indexPath in
-            if let snapshot = self.currentSnapshot {
+            if let snapshot = self.currentSnapshot, snapshot.sectionIdentifiers.indices.contains(indexPath.section) {
                 let videoCategory = snapshot.sectionIdentifiers[indexPath.section]
-                supplementaryView.label.text = videoCategory.title
+                supplementaryView.leadingInset = Self.cardInset
+                supplementaryView.set(title: videoCategory.title, detail: nil)
             }
         }
 
@@ -206,6 +301,8 @@ extension SearchResultViewController: UICollectionViewDelegate {
     func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
         guard let data = dataSource.itemIdentifier(for: indexPath) else { return }
         switch data {
+        case let .term(term):
+            select(term)
         case let .video(data):
             let detailVC = VideoDetailViewController.create(aid: data.aid, cid: 0)
             detailVC.present(from: self)
@@ -249,9 +346,13 @@ extension SearchResultViewController: UICollectionViewDelegate {
 
 extension SearchResultViewController: UISearchResultsUpdating {
     func updateSearchResults(for searchController: UISearchController) {
+        self.searchController = searchController
         guard searchController.searchBar.text != "清空历史" else { return }
-        if let text = searchController.searchBar.text {
+        if let text = searchController.searchBar.text, text != searchText {
             searchText = text
+            if text.isEmpty {
+                showDiscovery()
+            }
         }
 
         if let text = searchController.searchBar.text, !text.isEmpty {
@@ -267,21 +368,8 @@ extension SearchResultViewController: UISearchResultsUpdating {
             // 添加showHistorySuggest判断避免可能重复执行
             if !showHistorySuggest {
                 showHistorySuggest = true
-                // 清空搜索词后优先显示热搜词，失败时回退到历史搜索词
-                suggestDelayWork.submit { [weak self] in
-                    guard let self else { return }
-                    if !self.hotSuggestsCache.isEmpty {
-                        searchController.searchSuggestions = self.buildSuggestions(hotSuggests: self.hotSuggestsCache)
-                        return
-                    }
-                    do {
-                        let hotSuggests = try await self.fetchHotSuggestions()
-                        self.hotSuggestsCache = hotSuggests
-                        searchController.searchSuggestions = self.buildSuggestions(hotSuggests: hotSuggests)
-                    } catch {
-                        searchController.searchSuggestions = self.buildHistorySuggestions()
-                    }
-                }
+                // Trending queries fill the page below; the row under the keyboard keeps history.
+                searchController.searchSuggestions = buildHistorySuggestions()
             }
         }
     }
@@ -301,17 +389,6 @@ extension SearchResultViewController: UISearchResultsUpdating {
 }
 
 private extension SearchResultViewController {
-    func fetchHotSuggestions() async throws -> [SuggestEntry] {
-        let result = try await WebRequest.requestSearchHotMobile(limit: hotSuggestLimit)
-        return result.list.map {
-            SuggestEntry(title: $0.show_name, iconImage: UIImage(systemName: "flame"))
-        }
-    }
-
-    func buildSuggestions(hotSuggests: [SuggestEntry]) -> [SuggestEntry] {
-        buildHistorySuggestions() + hotSuggests
-    }
-
     func buildHistorySuggestions() -> [SuggestEntry] {
         var suggests = Settings.searchHistories.map {
             SuggestEntry(title: $0, iconImage: UIImage(systemName: "clock"))
@@ -456,10 +533,18 @@ struct SearchResult: Decodable, Hashable {
 }
 
 struct SearchList: Hashable {
+    enum Kind {
+        /// Video, live or user cards.
+        case cards
+        /// Numbered trending queries in two columns.
+        case ranking
+    }
+
     let title: String
     let width = NSCollectionLayoutDimension.fractionalWidth(Settings.displayStyle.fractionalWidth)
     let height: NSCollectionLayoutDimension
     let scrollingBehavior: UICollectionLayoutSectionOrthogonalScrollingBehavior
+    var kind = Kind.cards
 }
 
 struct SearchLiveResult: Decodable, Hashable {
@@ -539,5 +624,63 @@ class SuggestEntry: NSObject, UISearchSuggestion {
     init(title: String, iconImage: UIImage? = nil) {
         self.title = title
         self.iconImage = iconImage
+    }
+}
+
+/// A trending query: its rank, pink for the top three, and the query.
+final class SearchTermCell: BLMotionCollectionViewCell {
+    static let rowHeight: CGFloat = 76
+
+    private let fillView = UIView()
+    private let rankLabel = UILabel()
+    private let titleLabel = UILabel()
+    private var rank = 0
+
+    override func setup() {
+        super.setup()
+        scaleFactor = 1.05
+        contentView.addSubview(fillView)
+        fillView.snp.makeConstraints { make in
+            make.edges.equalToSuperview()
+        }
+        fillView.layer.cornerRadius = Theme.rowRadius
+        fillView.layer.cornerCurve = .continuous
+        let stack = UIStackView(arrangedSubviews: [rankLabel, titleLabel])
+        stack.spacing = 14
+        stack.alignment = .center
+        contentView.addSubview(stack)
+        stack.snp.makeConstraints { make in
+            make.leading.equalToSuperview().offset(18)
+            make.trailing.lessThanOrEqualToSuperview().offset(-26)
+            make.centerY.equalToSuperview()
+        }
+        rankLabel.font = .monospacedDigitSystemFont(ofSize: 30, weight: .bold)
+        rankLabel.textAlignment = .center
+        rankLabel.snp.makeConstraints { make in
+            make.width.equalTo(44)
+        }
+        titleLabel.font = .systemFont(ofSize: 28, weight: .medium)
+        titleLabel.lineBreakMode = .byTruncatingTail
+    }
+
+    func configure(with term: SearchResultViewController.SearchTerm) {
+        rank = term.rank
+        rankLabel.text = "\(term.rank)"
+        titleLabel.text = term.text
+        updateColors()
+    }
+
+    override func didUpdateFocus(in context: UIFocusUpdateContext, with coordinator: UIFocusAnimationCoordinator) {
+        super.didUpdateFocus(in: context, with: coordinator)
+        coordinator.addCoordinatedAnimations {
+            self.updateColors()
+        }
+    }
+
+    private func updateColors() {
+        let top = rank <= 3
+        fillView.backgroundColor = isFocused ? Theme.focusedFill : .clear
+        titleLabel.textColor = isFocused ? Theme.focusedText : Theme.textPrimary
+        rankLabel.textColor = top ? Theme.accent : (isFocused ? Theme.focusedText.withAlphaComponent(0.6) : Theme.textTertiary)
     }
 }
