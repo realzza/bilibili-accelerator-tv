@@ -17,48 +17,49 @@ class LoginViewController: UIViewController {
     private let qrcodeImageView: UIImageView = {
         let imageView = UIImageView()
         imageView.contentMode = .scaleAspectFit
-        imageView.translatesAutoresizingMaskIntoConstraints = false
         return imageView
     }()
 
+    /// The code sits on white, as a phone camera reads it best, with a margin of quiet zone.
+    private let qrCard: UIView = {
+        let view = UIView()
+        view.backgroundColor = .white
+        view.layer.cornerRadius = 32
+        view.layer.cornerCurve = .continuous
+        return view
+    }()
+
+    private let statusLabel: UILabel = {
+        let label = UILabel()
+        label.font = .systemFont(ofSize: 26, weight: .medium)
+        label.textColor = Theme.textSecondary
+        label.textAlignment = .center
+        return label
+    }()
+
     private let regenerateButton: UIButton = {
-        var config = UIButton.Configuration.plain()
-        config.title = "重新生成二维码"
-        config.contentInsets = NSDirectionalEdgeInsets(top: 20, leading: 40, bottom: 20, trailing: 40)
-
-        let button = UIButton(configuration: config)
-        button.translatesAutoresizingMaskIntoConstraints = false
-        return button
-    }()
-
-    private let leftContainerView: UIView = {
-        let view = UIView()
-        view.translatesAutoresizingMaskIntoConstraints = false
-        return view
-    }()
-
-    private let dividerView: UIView = {
-        let view = UIView()
-        view.backgroundColor = UIColor(white: 0.3333333333, alpha: 1)
-        view.translatesAutoresizingMaskIntoConstraints = false
-        return view
+        var config = UIButton.Configuration.capsule()
+        config.title = "刷新二维码"
+        config.image = UIImage(systemName: "arrow.clockwise")
+        config.imagePadding = 12
+        config.contentInsets = NSDirectionalEdgeInsets(top: 18, leading: 36, bottom: 18, trailing: 36)
+        config.setTitleFont(.systemFont(ofSize: 26, weight: .semibold))
+        return UIButton(configuration: config)
     }()
 
     private let titleLabel: UILabel = {
         let label = UILabel()
-        label.text = "账号登录"
-        label.font = UIFont.preferredFont(forTextStyle: .title1)
-        label.translatesAutoresizingMaskIntoConstraints = false
+        label.text = "扫码登录"
+        label.font = .systemFont(ofSize: 64, weight: .bold)
+        label.textColor = Theme.textPrimary
         return label
     }()
 
-    private let guideLabel: UILabel = {
+    private let subtitleLabel: UILabel = {
         let label = UILabel()
-        label.text = "1 请打开BiliBili官方手机客户端扫码登录\n\n2. 如果登录失败尝试点击重新生成二维码"
-        label.font = UIFont.preferredFont(forTextStyle: .headline)
-        label.numberOfLines = 0
-        label.lineBreakMode = .byTruncatingTail
-        label.translatesAutoresizingMaskIntoConstraints = false
+        label.text = "用哔哩哔哩手机客户端登录这台 Apple TV"
+        label.font = .systemFont(ofSize: 28)
+        label.textColor = Theme.textSecondary
         return label
     }()
 
@@ -136,6 +137,7 @@ class LoginViewController: UIViewController {
             let image = self.generateQRCode(from: url)
             self.qrcodeImageView.image = image
             self.oauthKey = code
+            self.setStatus("等待扫码", highlighted: false)
             self.startValidationTimer()
         }
     }
@@ -168,9 +170,12 @@ class LoginViewController: UIViewController {
             guard let self = self else { return }
             switch state {
             case .expire:
+                self.setStatus("二维码已过期，正在刷新", highlighted: false)
                 self.initValidation()
             case .waiting:
                 break
+            case .scanned:
+                self.setStatus("已扫码，请在手机上确认登录", highlighted: true)
             case let .success(token, cookies):
                 print(token)
                 AccountManager.shared.registerAccount(token: token, cookies: cookies) { [weak self] _ in
@@ -186,53 +191,68 @@ class LoginViewController: UIViewController {
         initValidation()
     }
 
+    private func setStatus(_ text: String, highlighted: Bool) {
+        statusLabel.text = text
+        statusLabel.textColor = highlighted ? Theme.accent : Theme.textSecondary
+    }
+
     private func setupUI() {
-        view.backgroundColor = .black
-
-        view.addSubview(leftContainerView)
-        view.addSubview(dividerView)
-        view.addSubview(titleLabel)
-        view.addSubview(guideLabel)
-
-        let qrStackView = UIStackView(arrangedSubviews: [qrcodeImageView, regenerateButton])
-        qrStackView.axis = .vertical
-        qrStackView.alignment = .center
-        qrStackView.spacing = 50
-        qrStackView.translatesAutoresizingMaskIntoConstraints = false
-        leftContainerView.addSubview(qrStackView)
-
+        view.backgroundColor = Theme.background
         regenerateButton.addTarget(self, action: #selector(actionStart), for: .primaryActionTriggered)
 
-        leftContainerView.snp.makeConstraints { make in
-            make.leading.equalToSuperview()
-            make.top.equalTo(view.safeAreaLayoutGuide.snp.top)
-            make.bottom.equalToSuperview()
-            make.width.equalToSuperview().multipliedBy(0.5)
+        qrCard.addSubview(qrcodeImageView)
+        qrcodeImageView.snp.makeConstraints { make in
+            make.edges.equalToSuperview().inset(32)
+            make.size.equalTo(460)
         }
+        let codeColumn = UIStackView(arrangedSubviews: [qrCard, statusLabel, regenerateButton])
+        codeColumn.axis = .vertical
+        codeColumn.alignment = .center
+        codeColumn.spacing = 28
+        codeColumn.setCustomSpacing(36, after: statusLabel)
 
-        qrStackView.snp.makeConstraints { make in
+        let steps = UIStackView(arrangedSubviews: [
+            Self.makeStep(1, "打开哔哩哔哩手机客户端"),
+            Self.makeStep(2, "用「扫一扫」扫描左侧二维码"),
+            Self.makeStep(3, "在手机上确认登录"),
+        ])
+        steps.axis = .vertical
+        steps.spacing = 28
+        let guide = UIStackView(arrangedSubviews: [titleLabel, subtitleLabel, steps])
+        guide.axis = .vertical
+        guide.alignment = .leading
+        guide.spacing = 16
+        guide.setCustomSpacing(64, after: subtitleLabel)
+
+        let columns = UIStackView(arrangedSubviews: [codeColumn, guide])
+        columns.alignment = .center
+        columns.spacing = 140
+        view.addSubview(columns)
+        columns.snp.makeConstraints { make in
             make.center.equalToSuperview()
         }
+    }
 
-        qrcodeImageView.snp.makeConstraints { make in
-            make.width.height.equalTo(540)
+    /// A numbered step: the number in a pink circle, then what to do.
+    private static func makeStep(_ number: Int, _ text: String) -> UIView {
+        let badge = UILabel()
+        badge.text = "\(number)"
+        badge.font = .systemFont(ofSize: 26, weight: .bold)
+        badge.textColor = Theme.onAccent
+        badge.backgroundColor = Theme.accent
+        badge.textAlignment = .center
+        badge.layer.cornerRadius = 24
+        badge.clipsToBounds = true
+        badge.snp.makeConstraints { make in
+            make.size.equalTo(48)
         }
-
-        dividerView.snp.makeConstraints { make in
-            make.centerX.equalToSuperview()
-            make.top.bottom.equalTo(view.safeAreaLayoutGuide)
-            make.width.equalTo(2)
-        }
-
-        titleLabel.snp.makeConstraints { make in
-            make.leading.equalTo(dividerView.snp.trailing).offset(100)
-            make.top.equalTo(view.safeAreaLayoutGuide.snp.top).offset(120)
-        }
-
-        guideLabel.snp.makeConstraints { make in
-            make.leading.equalTo(dividerView.snp.trailing).offset(100)
-            make.top.equalTo(titleLabel.snp.bottom).offset(50)
-            make.trailing.lessThanOrEqualTo(view.safeAreaLayoutGuide.snp.trailing).offset(-100)
-        }
+        let label = UILabel()
+        label.text = text
+        label.font = .systemFont(ofSize: 32, weight: .medium)
+        label.textColor = Theme.textPrimary
+        let row = UIStackView(arrangedSubviews: [badge, label])
+        row.spacing = 22
+        row.alignment = .center
+        return row
     }
 }

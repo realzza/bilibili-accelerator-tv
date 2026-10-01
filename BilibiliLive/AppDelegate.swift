@@ -48,8 +48,8 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         /// Commands from the accelerator's debug server, for driving tests from a Mac:
         /// `play?aid=&cid=` (or `epid=`), `detail?aid=&cid=`, `stop`, `home` (the tab bar, even when
         /// signed out), `tab?index=`, `quality?qn=`, `seek?to=<fraction of the duration>`, `accel?on=0|1`,
-        /// `playseq?ids=aid:cid,…` (play a sequence), `search?q=` (the search tab with a query), `route` (the 线路 tab on its own), `routetest` (its test button), `focus?x=&y=` (focus
-        /// what is at that point), `select` (press what has focus), `probe?class=&match=` (log a
+        /// `open?screen=` (accounts, tabs, login, up&mid=, or a page such as history), `playseq?ids=aid:cid,…` (play a sequence), `search?q=` (the search tab with a query), `route` (the 线路 tab on its own), `routetest` (its test button), `focus?x=&y=` (focus
+        /// what is at that point), `select` (press what has focus), `press?x=&y=` (trigger what is at that point), `probe?class=&match=` (log a
         /// class's methods) and `call?sel=&arg=` (send one to the player, such as
         /// `displayInfoViewControllerWithIdentifier:` with `arg=线路` to open the info panel there).
         private static func handleDebugCommand(_ command: String, _ parameters: [String: String]) {
@@ -119,6 +119,30 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
                 // controller prefers the target for one focus update.
                 let controller = UIViewController.topMostViewController()
                 DebugFocus.prefer(target, in: controller)
+            case "open":
+                // Presents a screen the tab bar can't reach without a remote: `screen=` accounts,
+                // tabs, login, up (with `mid=`), or a page name such as history or toView.
+                let top = UIViewController.topMostViewController()
+                switch parameters["screen"] {
+                case "accounts":
+                    let controller = AccountSwitcherViewController()
+                    controller.modalPresentationStyle = .overFullScreen
+                    top.present(controller, animated: false)
+                case "tabs":
+                    top.present(TabBarCustomizationViewController(), animated: false)
+                case "login":
+                    AppDelegate.shared.showLogin()
+                case "up":
+                    let controller = UpSpaceViewController()
+                    controller.mid = parameters["mid"].flatMap(Int.init) ?? 0
+                    top.present(controller, animated: false)
+                case let name?:
+                    if let page = TabBarPage(rawValue: name) {
+                        top.present(TabBarPageVCFactory.createVC(for: page), animated: false)
+                    }
+                case nil:
+                    break
+                }
             case "playseq":
                 // Plays `ids=aid:cid,aid:cid,…` in order, as a collection would.
                 let seq = (parameters["ids"] ?? "").split(separator: ",").compactMap { pair -> PlayInfo? in
@@ -139,6 +163,36 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
                 let searchController = container.searchController
                 searchController.searchBar.text = parameters["q"] ?? ""
                 searchController.searchResultsUpdater?.updateSearchResults(for: searchController)
+            case "press":
+                // Triggers the cell or control at a screen point without moving focus there,
+                // for places focus commands can't reach, such as a sidebar under the tab bar.
+                guard let window = AppDelegate.shared.window,
+                      let x = parameters["x"].flatMap(Double.init), let y = parameters["y"].flatMap(Double.init)
+                else { return }
+                let point = CGPoint(x: x, y: y)
+                var hit: UIView?
+                func visit(_ view: UIView) {
+                    guard !view.isHidden, view.alpha > 0.01 else { return }
+                    if view is UICollectionViewCell || view is UIControl,
+                       view.convert(view.bounds, to: window).contains(point)
+                    {
+                        hit = view
+                    }
+                    view.subviews.forEach(visit)
+                }
+                visit(window)
+                if let control = hit as? UIControl {
+                    control.sendActions(for: .primaryActionTriggered)
+                } else if let cell = hit as? UICollectionViewCell {
+                    var ancestor = cell.superview
+                    while let view = ancestor, !(view is UICollectionView) {
+                        ancestor = view.superview
+                    }
+                    guard let collectionView = ancestor as? UICollectionView,
+                          let indexPath = collectionView.indexPath(for: cell) else { return }
+                    collectionView.selectItem(at: indexPath, animated: false, scrollPosition: [])
+                    collectionView.delegate?.collectionView?(collectionView, didSelectItemAt: indexPath)
+                }
             case "select":
                 // Presses the focused item, as the remote's select button would.
                 guard let window = AppDelegate.shared.window,

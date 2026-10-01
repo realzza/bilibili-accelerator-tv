@@ -752,6 +752,13 @@ struct HistoryData: DisplayData, Codable {
         DateFormatter.relativeTimeStringFor(timestamp: view_at)
     }
 
+    /// A finished video reports -1.
+    var watchProgress: Double? {
+        if progress < 0 { return 1 }
+        guard progress > 0, duration > 0 else { return nil }
+        return Double(progress) / Double(duration)
+    }
+
     var overlay: DisplayOverlay? {
         var leftItems = [DisplayOverlay.DisplayOverlayItem]()
         var rightItems = [DisplayOverlay.DisplayOverlayItem]()

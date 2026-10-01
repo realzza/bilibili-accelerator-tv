@@ -36,6 +36,8 @@ enum ApiRequest {
         case fail
         case expire
         case waiting
+        /// Scanned on the phone, not yet confirmed there.
+        case scanned
     }
 
     static func getToken() -> LoginToken? {
@@ -223,6 +225,7 @@ enum ApiRequest {
                     switch code {
                     case 86038: handler?(.expire)
                     case 86039: handler?(.waiting)
+                    case 86090: handler?(.scanned)
                     default:
                         break
                     }

@@ -16,12 +16,15 @@ protocol DisplayData: Hashable, AvatarProviding {
     var avatar: URL? { get }
     var date: String? { get }
     var overlay: DisplayOverlay? { get }
+    /// How much was watched, 0 to 1, for a bar along the thumbnail; nil for none.
+    var watchProgress: Double? { get }
 }
 
 extension DisplayData {
     var avatar: URL? { return nil }
     var date: String? { return nil }
     var overlay: DisplayOverlay? { return nil }
+    var watchProgress: Double? { return nil }
 }
 
 struct AnyDispplayData: Hashable {
