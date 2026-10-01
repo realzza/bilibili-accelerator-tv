@@ -108,6 +108,8 @@ final class FollowsSubscriptionsViewController: UIViewController, BLTabBarConten
 
     private weak var current: UIViewController?
     private var selectedRow: Row = .all
+    /// Uploaders opened here, whose new-post dot is cleared.
+    private var seenUps = Set<Int>()
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -159,6 +161,9 @@ final class FollowsSubscriptionsViewController: UIViewController, BLTabBarConten
         case .all:
             show(allFeed)
         case let .up(up):
+            if up.hasUpdate, seenUps.insert(up.mid).inserted, let index = rows.firstIndex(of: row) {
+                sidebar.reconfigureItems(at: [IndexPath(item: index, section: 0)])
+            }
             let space = UpSpaceViewController()
             space.mid = up.mid
             space.collectionVC.styleOverride = .sideBar
@@ -194,7 +199,7 @@ extension FollowsSubscriptionsViewController: UICollectionViewDataSource, UIColl
         case .all:
             cell.configure(title: "全部动态", avatar: nil, symbol: "square.grid.2x2", hasUpdate: false)
         case let .up(up):
-            cell.configure(title: up.name, avatar: up.face, symbol: nil, hasUpdate: up.hasUpdate)
+            cell.configure(title: up.name, avatar: up.face, symbol: nil, hasUpdate: up.hasUpdate && !seenUps.contains(up.mid))
         }
         return cell
     }
