@@ -12,14 +12,16 @@ final class AccountSwitcherViewController: UIViewController {
     private let subtitleLabel = UILabel()
     private let closeButton = UIButton(type: .system)
     private lazy var collectionView: UICollectionView = {
+        // One row: accounts, then 添加账号, scrolling sideways when there are many.
         let layout = UICollectionViewFlowLayout()
-        layout.scrollDirection = .vertical
+        layout.scrollDirection = .horizontal
         layout.minimumLineSpacing = 40
-        layout.minimumInteritemSpacing = 30
-        layout.sectionInset = UIEdgeInsets(top: 40, left: 60, bottom: 40, right: 60)
+        layout.sectionInset = UIEdgeInsets(top: 30, left: 20, bottom: 40, right: 20)
         layout.itemSize = CGSize(width: 300, height: 320)
         let collection = UICollectionView(frame: .zero, collectionViewLayout: layout)
         collection.backgroundColor = .clear
+        collection.clipsToBounds = false
+        collection.contentInset = UIEdgeInsets(top: 0, left: 40, bottom: 0, right: 40)
         collection.remembersLastFocusedIndexPath = true
         collection.register(AccountSwitcherCell.self, forCellWithReuseIdentifier: AccountSwitcherCell.reuseIdentifier)
         collection.register(AccountSwitcherAddCell.self, forCellWithReuseIdentifier: AccountSwitcherAddCell.reuseIdentifier)
@@ -60,7 +62,7 @@ final class AccountSwitcherViewController: UIViewController {
             containerView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             containerView.centerYAnchor.constraint(equalTo: view.centerYAnchor),
             containerView.widthAnchor.constraint(equalToConstant: 1100),
-            containerView.heightAnchor.constraint(equalToConstant: 720),
+            containerView.heightAnchor.constraint(equalToConstant: 600),
         ])
     }
 
@@ -68,12 +70,12 @@ final class AccountSwitcherViewController: UIViewController {
         let contentView = containerView.contentView
         titleLabel.text = "账号管理"
         titleLabel.font = UIFont.systemFont(ofSize: 48, weight: .semibold)
-        titleLabel.textColor = .white
+        titleLabel.textColor = Theme.textPrimary
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
 
         subtitleLabel.text = "快速切换登录账号或添加新的账号"
         subtitleLabel.font = UIFont.systemFont(ofSize: 26, weight: .regular)
-        subtitleLabel.textColor = UIColor.white.withAlphaComponent(0.8)
+        subtitleLabel.textColor = Theme.textSecondary
         subtitleLabel.translatesAutoresizingMaskIntoConstraints = false
 
         closeButton.setTitle("关闭", for: .normal)
@@ -210,16 +212,17 @@ private final class AccountSwitcherCell: UICollectionViewCell {
         badgeLabel.isHidden = true
         avatarView.backgroundColor = .clear
         avatarView.tintColor = nil
-        background.layer.borderWidth = 0
+        background.backgroundColor = Theme.groupedFill
+        nameLabel.textColor = Theme.textPrimary
         background.transform = .identity
     }
 
     private func configure() {
         contentView.clipsToBounds = false
         background.translatesAutoresizingMaskIntoConstraints = false
-        background.backgroundColor = UIColor.white.withAlphaComponent(0.08)
+        background.backgroundColor = Theme.groupedFill
         background.layer.cornerRadius = 28
-        background.layer.borderWidth = 0
+        background.layer.cornerCurve = .continuous
         contentView.addSubview(background)
 
         avatarView.translatesAutoresizingMaskIntoConstraints = false
@@ -229,15 +232,15 @@ private final class AccountSwitcherCell: UICollectionViewCell {
 
         nameLabel.translatesAutoresizingMaskIntoConstraints = false
         nameLabel.font = UIFont.systemFont(ofSize: 30, weight: .medium)
-        nameLabel.textColor = .white
+        nameLabel.textColor = Theme.textPrimary
         nameLabel.textAlignment = .center
         nameLabel.numberOfLines = 2
 
         badgeLabel.translatesAutoresizingMaskIntoConstraints = false
         badgeLabel.text = "当前使用"
         badgeLabel.font = UIFont.systemFont(ofSize: 22, weight: .semibold)
-        badgeLabel.textColor = .white
-        badgeLabel.backgroundColor = UIColor.systemBlue
+        badgeLabel.textColor = Theme.onAccent
+        badgeLabel.backgroundColor = Theme.accent
         badgeLabel.layer.cornerRadius = 16
         badgeLabel.clipsToBounds = true
         badgeLabel.textAlignment = .center
@@ -273,8 +276,8 @@ private final class AccountSwitcherCell: UICollectionViewCell {
         super.didUpdateFocus(in: context, with: coordinator)
         let isFocused = (context.nextFocusedView == self)
         coordinator.addCoordinatedAnimations {
-            self.background.layer.borderWidth = isFocused ? 4 : 0
-            self.background.layer.borderColor = isFocused ? UIColor.systemBlue.cgColor : UIColor.clear.cgColor
+            self.background.backgroundColor = isFocused ? Theme.focusedFill : Theme.groupedFill
+            self.nameLabel.textColor = isFocused ? Theme.focusedText : Theme.textPrimary
             self.background.transform = isFocused ? CGAffineTransform(scaleX: 1.06, y: 1.06) : .identity
         }
     }
@@ -285,8 +288,9 @@ private final class AccountSwitcherCell: UICollectionViewCell {
             avatarView.kf.setImage(with: url)
         } else {
             avatarView.image = UIImage(systemName: "person.crop.circle.fill")
-            avatarView.tintColor = UIColor.white.withAlphaComponent(0.8)
-            avatarView.backgroundColor = UIColor.white.withAlphaComponent(0.05)
+            // Gray reads on both the dark card and the white focused one.
+            avatarView.tintColor = .systemGray
+            avatarView.backgroundColor = .clear
         }
         badgeLabel.isHidden = !active
     }
@@ -311,26 +315,27 @@ private final class AccountSwitcherAddCell: UICollectionViewCell {
 
     override func prepareForReuse() {
         super.prepareForReuse()
-        background.layer.borderWidth = 0
+        background.backgroundColor = Theme.groupedFill
         background.transform = .identity
     }
 
     private func configure() {
         contentView.clipsToBounds = false
         background.translatesAutoresizingMaskIntoConstraints = false
-        background.backgroundColor = UIColor.white.withAlphaComponent(0.08)
+        background.backgroundColor = Theme.groupedFill
         background.layer.cornerRadius = 28
+        background.layer.cornerCurve = .continuous
         contentView.addSubview(background)
 
         iconView.translatesAutoresizingMaskIntoConstraints = false
         iconView.contentMode = .scaleAspectFit
         iconView.image = UIImage(systemName: "plus.circle.fill")
-        iconView.tintColor = .systemBlue
+        iconView.tintColor = Theme.textSecondary
 
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
         titleLabel.text = "添加账号"
         titleLabel.font = UIFont.systemFont(ofSize: 30, weight: .medium)
-        titleLabel.textColor = .white
+        titleLabel.textColor = Theme.textPrimary
         titleLabel.textAlignment = .center
 
         background.addSubview(iconView)
@@ -357,8 +362,9 @@ private final class AccountSwitcherAddCell: UICollectionViewCell {
         super.didUpdateFocus(in: context, with: coordinator)
         let isFocused = (context.nextFocusedView == self)
         coordinator.addCoordinatedAnimations {
-            self.background.layer.borderWidth = isFocused ? 4 : 0
-            self.background.layer.borderColor = isFocused ? UIColor.systemBlue.cgColor : UIColor.clear.cgColor
+            self.background.backgroundColor = isFocused ? Theme.focusedFill : Theme.groupedFill
+            self.titleLabel.textColor = isFocused ? Theme.focusedText : Theme.textPrimary
+            self.iconView.tintColor = isFocused ? Theme.focusedText : Theme.textSecondary
             self.background.transform = isFocused ? CGAffineTransform(scaleX: 1.06, y: 1.06) : .identity
         }
     }
