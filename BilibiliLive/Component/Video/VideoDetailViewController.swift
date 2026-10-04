@@ -114,8 +114,8 @@ class VideoDetailViewController: UIViewController {
         pageCollectionView.collectionViewLayout = makePageCollectionViewLayout()
         pageCollectionView.clipsToBounds = false
         setupPageRangeCollectionView()
-        recommandCollectionView.register(RelatedVideoCell.self, forCellWithReuseIdentifier: String(describing: RelatedVideoCell.self))
-        ugcCollectionView.register(RelatedVideoCell.self, forCellWithReuseIdentifier: String(describing: RelatedVideoCell.self))
+        recommandCollectionView.register(FeedCollectionViewCell.self, forCellWithReuseIdentifier: String(describing: FeedCollectionViewCell.self))
+        ugcCollectionView.register(FeedCollectionViewCell.self, forCellWithReuseIdentifier: String(describing: FeedCollectionViewCell.self))
         recommandCollectionView.collectionViewLayout = makeRelatedVideoCollectionViewLayout()
         ugcCollectionView.collectionViewLayout = makeRelatedVideoCollectionViewLayout()
 
@@ -399,9 +399,8 @@ class VideoDetailViewController: UIViewController {
         header.isFollowing = data.Card.following
         let stats = [Self.count(data.View.stat.view) + " 播放",
                      Self.count(data.View.stat.danmaku) + " 弹幕",
-                     data.View.date,
-                     TimeInterval(data.View.duration).timeString(),
-                     data.View.bvid]
+                     data.View.date.map(FeedCollectionViewCell.shortDate),
+                     TimeInterval(data.View.duration).timeString()]
         header.statsLabel.text = stats.compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
         header.coinButton.title = Self.count(data.View.stat.coin)
         header.favButton.title = Self.count(data.View.stat.favorite)
@@ -709,14 +708,19 @@ extension VideoDetailViewController: UICollectionViewDataSource {
             }
             return cell
         case ugcCollectionView:
-            let cell = collectionView.dequeueReusableCell(withReuseIdentifier: String(describing: RelatedVideoCell.self), for: indexPath) as! RelatedVideoCell
+            let cell = collectionView.dequeueReusableCell(withReuseIdentifier: String(describing: FeedCollectionViewCell.self), for: indexPath) as! FeedCollectionViewCell
             let record = allUgcEpisodes[indexPath.row]
-            cell.update(data: record, isCurrent: record.aid == aid)
+            cell.styleOverride = .sideBar
+            cell.setup(data: record)
+            if record.aid == aid {
+                cell.setBadge("正在看")
+            }
             return cell
         case recommandCollectionView:
-            let cell = collectionView.dequeueReusableCell(withReuseIdentifier: String(describing: RelatedVideoCell.self), for: indexPath) as! RelatedVideoCell
+            let cell = collectionView.dequeueReusableCell(withReuseIdentifier: String(describing: FeedCollectionViewCell.self), for: indexPath) as! FeedCollectionViewCell
             if let related = data?.Related[indexPath.row] {
-                cell.update(data: related)
+                cell.styleOverride = .sideBar
+                cell.setup(data: related)
             }
             return cell
         default:
@@ -798,89 +802,6 @@ extension VideoDetailViewController {
             section.interGroupSpacing = 40
             return section
         }
-    }
-}
-
-/// A small video card in a row: 16:9 artwork and a one-line title, with 正在看 on the
-/// episode that is open.
-class RelatedVideoCell: BLMotionCollectionViewCell {
-    let titleLabel = MarqueeLabel()
-    let imageView = UIImageView()
-    private let artwork = UIView()
-    private let badgeLabel = PillLabel()
-
-    override var shadowLayer: CALayer {
-        artwork.layer
-    }
-
-    override func setup() {
-        super.setup()
-        scaleFactor = 1.08
-        contentView.addSubview(artwork)
-        contentView.addSubview(titleLabel)
-        artwork.snp.makeConstraints { make in
-            make.top.left.right.equalToSuperview()
-            make.height.equalTo(artwork.snp.width).multipliedBy(9.0 / 16)
-        }
-        artwork.addSubview(imageView)
-        imageView.snp.makeConstraints { make in
-            make.edges.equalToSuperview()
-        }
-        imageView.layer.cornerRadius = Theme.cardRadius
-        imageView.layer.cornerCurve = .continuous
-        imageView.clipsToBounds = true
-        imageView.contentMode = .scaleAspectFill
-        imageView.backgroundColor = UIColor(white: 1, alpha: 0.06)
-        artwork.addSubview(badgeLabel)
-        badgeLabel.snp.makeConstraints { make in
-            make.leading.top.equalToSuperview().inset(12)
-        }
-        badgeLabel.text = "正在看"
-        badgeLabel.font = .systemFont(ofSize: 18, weight: .bold)
-        badgeLabel.textColor = Theme.onAccent
-        badgeLabel.backgroundColor = Theme.accent
-        badgeLabel.layer.cornerRadius = 10
-        badgeLabel.clipsToBounds = true
-        badgeLabel.isHidden = true
-        titleLabel.snp.makeConstraints { make in
-            make.left.right.bottom.equalToSuperview()
-            make.top.equalTo(artwork.snp.bottom).offset(12)
-        }
-        titleLabel.setContentHuggingPriority(.required, for: .vertical)
-        titleLabel.font = .systemFont(ofSize: 25, weight: .medium)
-        titleLabel.textColor = Theme.textPrimary
-        titleLabel.fadeLength = 40
-        stopScroll()
-    }
-
-    func update(data: any DisplayData, isCurrent: Bool = false) {
-        titleLabel.text = data.title
-        badgeLabel.isHidden = !isCurrent
-        imageView.kf.setImage(with: data.pic, options: [.processor(DownsamplingImageProcessor(size: CGSize(width: 380, height: 214))), .cacheOriginalImage])
-    }
-
-    override func didUpdateFocus(in context: UIFocusUpdateContext, with coordinator: UIFocusAnimationCoordinator) {
-        super.didUpdateFocus(in: context, with: coordinator)
-        if isFocused {
-            startScroll()
-        } else {
-            stopScroll()
-        }
-    }
-
-    private func startScroll() {
-        titleLabel.restartLabel()
-        titleLabel.holdScrolling = false
-    }
-
-    private func stopScroll() {
-        titleLabel.shutdownLabel()
-        titleLabel.holdScrolling = true
-    }
-
-    override func prepareForReuse() {
-        super.prepareForReuse()
-        stopScroll()
     }
 }
 

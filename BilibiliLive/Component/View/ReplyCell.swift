@@ -13,6 +13,8 @@ class ReplyCell: BLMotionCollectionViewCell {
     @IBOutlet var avatarImageView: UIImageView!
     @IBOutlet var userNameLabel: UILabel!
     @IBOutlet var contenLabel: UILabel!
+    /// Likes and how long ago, at the top right beside the name.
+    private let metaLabel = UILabel()
 
     private var card: BLCardView? {
         contentView.subviews.first as? BLCardView
@@ -26,6 +28,16 @@ class ReplyCell: BLMotionCollectionViewCell {
         contenLabel.textAlignment = .natural
         contenLabel.numberOfLines = 5
         contenLabel.lineBreakMode = .byTruncatingTail
+        if let container = userNameLabel.superview {
+            container.addSubview(metaLabel)
+            metaLabel.font = .systemFont(ofSize: 20)
+            metaLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
+            metaLabel.snp.makeConstraints { make in
+                make.centerY.equalTo(userNameLabel)
+                make.trailing.equalToSuperview().offset(-20)
+                make.leading.greaterThanOrEqualTo(userNameLabel.snp.trailing).offset(12)
+            }
+        }
         updateColors()
     }
 
@@ -41,6 +53,7 @@ class ReplyCell: BLMotionCollectionViewCell {
         card?.fill = isFocused ? Theme.focusedFill : BLCardView.restingFill
         userNameLabel.textColor = isFocused ? Theme.focusedText : Theme.textPrimary
         contenLabel.textColor = isFocused ? Theme.focusedText : Theme.textSecondary
+        metaLabel.textColor = isFocused ? Theme.focusedText.withAlphaComponent(0.6) : Theme.textTertiary
     }
 
     func config(replay: Replys.Reply) {
@@ -53,6 +66,9 @@ class ReplyCell: BLMotionCollectionViewCell {
             ]
         )
         userNameLabel.text = replay.member.uname
+        let parts = [replay.like.flatMap { $0 > 0 ? "♥ " + $0.numberString().replacingOccurrences(of: " ", with: "") : nil },
+                     DateFormatter.relativeTimeStringFor(timestamp: replay.ctime)]
+        metaLabel.text = parts.compactMap { $0 }.joined(separator: " · ")
         if let attr = replay.createAttributedString(displayView: contenLabel) {
             contenLabel.attributedText = attr
         } else {
