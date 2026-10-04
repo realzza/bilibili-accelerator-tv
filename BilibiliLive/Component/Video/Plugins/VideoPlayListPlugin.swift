@@ -15,9 +15,19 @@ class VideoPlayListPlugin: NSObject, CommonPlayerPlugin {
     var onShowCurrentDetail: ((PlayInfo) -> Void)?
 
     let sequenceProvider: VideoSequenceProvider?
+    /// What plays next when the video isn't part of a sequence: the top related video. Not
+    /// offered while 循环播放 is on, which repeats the video instead.
+    var fallbackNext: PlayInfo?
+
+    private var offeredFallback: PlayInfo? {
+        Settings.loopPlay ? nil : fallbackNext
+    }
+
     /// The Up Next card on the current item, and whether the viewer turned it down.
     private var upNextProposal: AVContentProposal?
     private var declinedNext = false
+    /// The card is on screen, waiting for 立即播放, 取消 or the end of the video.
+    private var isShowingUpNext = false
 
     init(sequenceProvider: VideoSequenceProvider?) {
         self.sequenceProvider = sequenceProvider
@@ -28,7 +38,11 @@ class VideoPlayListPlugin: NSObject, CommonPlayerPlugin {
     }
 
     func playerWillStart(player: AVPlayer) {
-        guard let playerVC, let sequenceProvider else { return }
+        guard let playerVC else { return }
+        guard let sequenceProvider else {
+            scheduleUpNext(on: player, next: offeredFallback)
+            return
+        }
         let menuState = MainActor.assumeIsolated { () -> (PlayInfo?, PlayInfo?) in
             guard sequenceProvider.count > 0 else { return (nil, nil) }
             return (sequenceProvider.peekPrevious(), sequenceProvider.peekNext())
@@ -51,12 +65,13 @@ class VideoPlayListPlugin: NSObject, CommonPlayerPlugin {
         }
 
         playerVC.infoViewActions = actions
-        scheduleUpNext(on: player, next: next)
+        scheduleUpNext(on: player, next: next ?? offeredFallback)
     }
 
     /// Offers the next video in the last seconds of this one, as the system's Up Next card.
     private func scheduleUpNext(on player: AVPlayer, next: PlayInfo?) {
         declinedNext = false
+        isShowingUpNext = false
         guard let item = player.currentItem else { return }
         let duration = item.duration.seconds
         guard Settings.continouslyPlay, let next, let playerVC, duration.isFinite, duration > 60 else {
@@ -78,20 +93,27 @@ class VideoPlayListPlugin: NSObject, CommonPlayerPlugin {
     }
 
     func playerShouldPresent(contentProposal: AVContentProposal) -> Bool {
-        isUpNext(contentProposal)
+        let show = isUpNext(contentProposal)
+        isShowingUpNext = isShowingUpNext || show
+        return show
     }
 
     func playerDidAccept(contentProposal: AVContentProposal) {
         guard isUpNext(contentProposal) else { return }
+        isShowingUpNext = false
         upNextProposal = nil
         Task { [weak self] in
             _ = await self?.playNext()
         }
     }
 
+    /// 取消 pauses on dismissal, as AVKit leaves it; the video picks up again so it can end
+    /// here, without moving on.
     func playerDidReject(contentProposal: AVContentProposal) {
         guard isUpNext(contentProposal) else { return }
+        isShowingUpNext = false
         declinedNext = true
+        playerVC?.player?.play()
     }
 
     func addMenuItems(current: inout [UIMenuElement]) -> [UIMenuElement] {
@@ -126,6 +148,11 @@ class VideoPlayListPlugin: NSObject, CommonPlayerPlugin {
     }
 
     func playerDidEnd(player: AVPlayer) {
+        // The card waits for the end; take it down before moving on.
+        if isShowingUpNext {
+            isShowingUpNext = false
+            playerVC?.contentProposalViewController?.dismissContentProposal(for: .defer, animated: true, completion: nil)
+        }
         Task { [weak self] in
             guard let self else { return }
             // 连续播放 off, or the Up Next card turned down: this video is the last.
@@ -135,7 +162,7 @@ class VideoPlayListPlugin: NSObject, CommonPlayerPlugin {
                     await MainActor.run {
                         self.sequenceProvider?.reset()
                     }
-                    if !(await playNext()) {
+                    if !(await playNext(allowFallback: false)) {
                         player.currentItem?.seek(to: .zero, completionHandler: nil)
                         player.play()
                     }
@@ -148,11 +175,20 @@ class VideoPlayListPlugin: NSObject, CommonPlayerPlugin {
         }
     }
 
+    /// The next video of the sequence, or the related one when there is no sequence next.
     @discardableResult
-    private func playNext() async -> Bool {
+    private func playNext(allowFallback: Bool = true) async -> Bool {
         if let next = await sequenceProvider?.moveNext() {
             await MainActor.run { [weak self] in
                 self?.onPlayNextWithInfo?(next)
+            }
+            return true
+        }
+        let hasSequenceNext = await MainActor.run { sequenceProvider?.hasNext ?? false }
+        if allowFallback, !hasSequenceNext, let fallbackNext = offeredFallback {
+            self.fallbackNext = nil
+            await MainActor.run { [weak self] in
+                self?.onPlayNextWithInfo?(fallbackNext)
             }
             return true
         }

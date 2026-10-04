@@ -8,14 +8,12 @@ import Kingfisher
 import SnapKit
 import UIKit
 
-/// The Up Next card in the last seconds of a video: the picture shrinks to the left, and the
-/// next video's cover and title sit beside it with 立即播放 and 取消. It plays on its own when
-/// the countdown runs out.
+/// The Up Next card in the last seconds of a video: the picture shrinks to the left and keeps
+/// playing, and the next video's cover and title sit beside it with 立即播放 and 取消. The
+/// countdown is the time left in this video; the next one starts when it ends.
 final class UpNextViewController: AVContentProposalViewController {
     /// How long before the end the card appears, at most.
     static let leadTime: TimeInterval = 15
-    /// How long the card waits before playing the next video.
-    static let countdown: TimeInterval = 10
 
     private let upcoming: PlayInfo
     private let kickerLabel = UILabel()
@@ -106,7 +104,8 @@ final class UpNextViewController: AVContentProposalViewController {
         super.viewWillAppear(animated)
         // Danmaku and other overlays stay full screen while the picture shrinks; hide them.
         playerViewController?.contentOverlayView?.alpha = 0
-        dateOfAutomaticAcceptance = Date().addingTimeInterval(Self.countdown)
+        // No automatic acceptance: the video plays to its end, and the end moves on.
+        dateOfAutomaticAcceptance = nil
         updateCountdown()
         timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             self?.updateCountdown()
@@ -124,13 +123,16 @@ final class UpNextViewController: AVContentProposalViewController {
         timer = nil
     }
 
+    /// The time left in the video playing, which pauses when it does.
     private func updateCountdown() {
-        guard let date = dateOfAutomaticAcceptance else {
+        guard let player = playerViewController?.player, let item = player.currentItem,
+              item.duration.seconds.isFinite
+        else {
             countdownLabel.text = nil
             return
         }
-        let seconds = max(0, Int(date.timeIntervalSinceNow.rounded(.up)))
-        countdownLabel.text = "\(seconds) 秒后自动播放"
+        let left = max(0, item.duration.seconds - player.currentTime().seconds)
+        countdownLabel.text = "\(Int(left.rounded(.up))) 秒后自动播放"
     }
 
     private func show(title: String?, owner: String?, cover: URL?) {

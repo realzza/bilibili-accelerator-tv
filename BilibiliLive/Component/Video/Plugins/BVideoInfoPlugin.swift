@@ -15,22 +15,54 @@ class BVideoInfoPlugin: NSObject, CommonPlayerPlugin {
     let pic: URL?
     let viewPoints: [PlayerInfo.ViewPoint]?
 
+    /// The cover, fetched as soon as the plugin exists so it is ready when the player is.
+    private var artworkTask: Task<AVPlayerMetaUtils.Artwork?, Never>?
+    private var artwork: AVPlayerMetaUtils.Artwork?
+
     init(title: String?, subTitle: String?, desp: String?, pic: URL?, viewPoints: [PlayerInfo.ViewPoint]?) {
         self.title = title
         self.subTitle = subTitle
         self.desp = desp
         self.pic = pic
         self.viewPoints = viewPoints
+        super.init()
+        artworkTask = Task { await AVPlayerMetaUtils.loadArtwork(pic) }
+    }
+
+    func playerDidLoad(playerVC: AVPlayerViewController) {
+        if let player = playerVC.player {
+            applyInfo(to: player)
+        }
+    }
+
+    /// The info goes on the item as soon as there is one, while it still loads. The info panel
+    /// builds its tabs when it first shows; info that arrived later added 简介 in front of the
+    /// tabs already on screen.
+    func playerDidChange(player: AVPlayer) {
+        applyInfo(to: player)
     }
 
     func playerWillStart(player: AVPlayer) {
-        Task {
-            async let info: () = AVPlayerMetaUtils.setPlayerInfo(title: title, subTitle: subTitle, desp: desp, pic: pic, player: player)
-            if let viewPoints {
-                async let vp: () = updatePlayerCharpter(viewPoints: viewPoints, player: player)
-                await vp
+        if player.currentItem?.externalMetadata.isEmpty == true {
+            applyInfo(to: player)
+        }
+        if let viewPoints {
+            Task {
+                await updatePlayerCharpter(viewPoints: viewPoints, player: player)
             }
-            await info
+        }
+    }
+
+    private func applyInfo(to player: AVPlayer) {
+        MainActor.callSafely { [self] in
+            guard let item = player.currentItem else { return }
+            AVPlayerMetaUtils.apply(title: title, subTitle: subTitle, desp: desp, artwork: artwork, to: item)
+            guard artwork == nil, let artworkTask else { return }
+            Task { @MainActor [weak self, weak item] in
+                guard let loaded = await artworkTask.value, let self, let item else { return }
+                artwork = loaded
+                AVPlayerMetaUtils.apply(title: title, subTitle: subTitle, desp: desp, artwork: loaded, to: item)
+            }
         }
     }
 

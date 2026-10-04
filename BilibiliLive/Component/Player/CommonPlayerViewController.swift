@@ -17,6 +17,10 @@ class CommonPlayerViewController: UIViewController {
     private var playToEndObserver: Any?
     private var playbackStalledObserver: Any?
     private var isEnd = false
+    /// The app's info tabs, held back until the first video is ready to play. AVKit adds its own
+    /// 简介 tab only then, in front of the others, so tabs shown while loading jumped right.
+    private var heldInfoViewControllers: [UIViewController]?
+    private var hasShownInfoTabs = false
     private var isRestoringFromPip = false
     /// 新 AVPlayerItem ready 后是否自动 play。换 CDN host 等场景可临时关掉，由调用方按用户暂停状态决定是否续播。
     var autoPlayWhenReady = true
@@ -159,7 +163,22 @@ class CommonPlayerViewController: UIViewController {
 }
 
 extension CommonPlayerViewController {
+    /// Puts back the tabs held while the first video loaded, before any a plugin added since.
+    private func showHeldInfoTabs() {
+        hasShownInfoTabs = true
+        guard let held = heldInfoViewControllers else { return }
+        heldInfoViewControllers = nil
+        let added = playerVC.customInfoViewControllers.filter { tab in !held.contains { $0 === tab } }
+        playerVC.customInfoViewControllers = held + added
+    }
+
     private func playerDidChange(player: AVPlayer?) {
+        if let player, !hasShownInfoTabs, heldInfoViewControllers == nil,
+           player.currentItem?.status != .readyToPlay
+        {
+            heldInfoViewControllers = playerVC.customInfoViewControllers
+            playerVC.customInfoViewControllers = []
+        }
         if let player {
             activePlugins.forEach { $0.playerDidChange(player: player) }
             rateObserver = player.observe(\.rate, options: [.old, .new]) {
@@ -195,6 +214,7 @@ extension CommonPlayerViewController {
             switch item.status {
             case .readyToPlay:
                 isEnd = false
+                showHeldInfoTabs()
                 activePlugins.forEach { $0.playerWillStart(player: player) }
                 playerWillStart(player: player)
                 if autoPlayWhenReady {

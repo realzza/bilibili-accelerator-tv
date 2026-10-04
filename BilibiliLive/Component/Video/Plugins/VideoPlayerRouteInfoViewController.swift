@@ -7,16 +7,21 @@ import BiliAccelerator
 import SnapKit
 import UIKit
 
-/// The 线路 tab of the player's info panel: how playback is going, which host serves the
-/// video, the rate and buffer, and a button that races the next fragment on two other hosts.
+/// The 线路 tab of the player's info panel, after the accelerator userscript's panel: how
+/// playback is going beside a status dot, a download speed card with a smooth chart, and a
+/// button that races the next fragment on two other hosts.
 final class VideoPlayerRouteInfoViewController: UIViewController {
-    private let dot = UIView()
+    private let statusDot = StatusDotView()
     private let healthLabel = UILabel()
     private let hostLabel = UILabel()
     private let switchesLabel = UILabel()
-    private let rateLabel = UILabel()
+
+    private let speedTitleLabel = UILabel()
+    private let speedValueLabel = UILabel()
+    private let chart = SpeedChartView()
+    private let peakLabel = UILabel()
     private let bufferLabel = UILabel()
-    private let sparkline = SparklineView()
+
     private let testButton = UIButton(configuration: .capsule())
     private let testCaption = UILabel()
     private let content = UIStackView()
@@ -26,6 +31,9 @@ final class VideoPlayerRouteInfoViewController: UIViewController {
     private let messageLabel = UILabel()
     private var timer: Timer?
     private var status: RouteStatus?
+    /// The speed shown, eased toward each new reading as the userscript does, so it doesn't jump.
+    private var shownMbps: Double?
+    private var peakMbps: Double = 0
 
     init() {
         super.init(nibName: nil, bundle: nil)
@@ -46,47 +54,52 @@ final class VideoPlayerRouteInfoViewController: UIViewController {
         preferredContentSize = CGSize(width: 0, height: 290)
         view.backgroundColor = .clear
 
-        dot.layer.cornerRadius = 7
-        dot.snp.makeConstraints { make in
-            make.size.equalTo(14)
-        }
-        healthLabel.font = .systemFont(ofSize: 34, weight: .bold)
+        // Status: the dot in a soft halo, then what it means.
+        healthLabel.font = .systemFont(ofSize: 36, weight: .bold)
         healthLabel.textColor = Theme.textPrimary
-        let healthRow = UIStackView(arrangedSubviews: [dot, healthLabel])
-        healthRow.spacing = 14
-        healthRow.alignment = .center
-        hostLabel.font = .systemFont(ofSize: 26)
+        hostLabel.font = .systemFont(ofSize: 25)
         hostLabel.textColor = Theme.textSecondary
         switchesLabel.font = .systemFont(ofSize: 22)
         switchesLabel.textColor = Theme.textTertiary
-        let statusColumn = UIStackView(arrangedSubviews: [healthRow, hostLabel, switchesLabel])
-        statusColumn.axis = .vertical
-        statusColumn.alignment = .leading
-        statusColumn.spacing = 12
+        let statusText = UIStackView(arrangedSubviews: [healthLabel, hostLabel, switchesLabel])
+        statusText.axis = .vertical
+        statusText.alignment = .leading
+        statusText.spacing = 8
+        statusText.setCustomSpacing(12, after: healthLabel)
+        let statusRow = UIStackView(arrangedSubviews: [statusDot, statusText])
+        statusRow.spacing = 26
+        statusRow.alignment = .center
 
-        let rateTitle = UILabel()
-        rateTitle.text = "实时网速"
-        rateTitle.font = .systemFont(ofSize: 22)
-        rateTitle.textColor = Theme.textTertiary
-        bufferLabel.font = .systemFont(ofSize: 22)
+        // Speed card: title and the number in the accent, the chart, the peak and the buffer.
+        speedTitleLabel.text = "下载速度"
+        speedTitleLabel.font = .systemFont(ofSize: 24, weight: .semibold)
+        speedTitleLabel.textColor = Theme.textSecondary
+        speedValueLabel.textAlignment = .right
+        let speedTop = UIStackView(arrangedSubviews: [speedTitleLabel, speedValueLabel])
+        speedTop.alignment = .lastBaseline
+        speedTop.distribution = .equalSpacing
+        peakLabel.font = .systemFont(ofSize: 21)
+        peakLabel.textColor = Theme.textTertiary
+        bufferLabel.font = .systemFont(ofSize: 21)
         bufferLabel.textColor = Theme.textTertiary
         bufferLabel.textAlignment = .right
-        let rateHeader = UIStackView(arrangedSubviews: [rateTitle, bufferLabel])
-        rateHeader.distribution = .equalSpacing
-        rateLabel.textColor = Theme.textPrimary
-        sparkline.snp.makeConstraints { make in
-            make.height.equalTo(56)
+        let speedFoot = UIStackView(arrangedSubviews: [peakLabel, bufferLabel])
+        speedFoot.distribution = .equalSpacing
+        let speedStack = UIStackView(arrangedSubviews: [speedTop, chart, speedFoot])
+        speedStack.axis = .vertical
+        speedStack.spacing = 10
+        chart.snp.makeConstraints { make in
+            make.height.equalTo(96)
         }
-        let rateStack = UIStackView(arrangedSubviews: [rateHeader, rateLabel, sparkline])
-        rateStack.axis = .vertical
-        rateStack.spacing = 8
-        let rateCard = UIView()
-        rateCard.backgroundColor = UIColor(white: 1, alpha: 0.08)
-        rateCard.layer.cornerRadius = 26
-        rateCard.layer.cornerCurve = .continuous
-        rateCard.addSubview(rateStack)
-        rateStack.snp.makeConstraints { make in
-            make.edges.equalToSuperview().inset(UIEdgeInsets(top: 20, left: 26, bottom: 20, right: 26))
+        let speedCard = UIView()
+        speedCard.backgroundColor = UIColor(white: 1, alpha: 0.07)
+        speedCard.layer.cornerRadius = 26
+        speedCard.layer.cornerCurve = .continuous
+        speedCard.layer.borderWidth = 1
+        speedCard.layer.borderColor = UIColor(white: 1, alpha: 0.1).cgColor
+        speedCard.addSubview(speedStack)
+        speedStack.snp.makeConstraints { make in
+            make.edges.equalToSuperview().inset(UIEdgeInsets(top: 18, left: 28, bottom: 16, right: 28))
         }
 
         var config = testButton.configuration
@@ -105,14 +118,19 @@ final class VideoPlayerRouteInfoViewController: UIViewController {
         actionColumn.alignment = .leading
         actionColumn.spacing = 14
 
-        let statusWrapper = Self.centeredVertically(statusColumn)
+        let statusWrapper = Self.centeredVertically(statusRow)
         let actionWrapper = Self.centeredVertically(actionColumn)
         content.addArrangedSubview(statusWrapper)
-        content.addArrangedSubview(rateCard)
+        content.addArrangedSubview(speedCard)
         content.addArrangedSubview(actionWrapper)
         content.axis = .horizontal
-        content.distribution = .fillEqually
-        content.spacing = 40
+        content.spacing = 48
+        statusWrapper.snp.makeConstraints { make in
+            make.width.equalTo(actionWrapper).multipliedBy(1.25)
+        }
+        speedCard.snp.makeConstraints { make in
+            make.width.equalTo(actionWrapper).multipliedBy(1.9)
+        }
         card.layer.cornerRadius = 36
         card.layer.cornerCurve = .continuous
         card.clipsToBounds = true
@@ -122,8 +140,8 @@ final class VideoPlayerRouteInfoViewController: UIViewController {
         }
         card.contentView.addSubview(content)
         content.snp.makeConstraints { make in
-            make.leading.trailing.equalToSuperview().inset(36)
-            make.top.bottom.equalToSuperview().inset(24)
+            make.leading.trailing.equalToSuperview().inset(40)
+            make.top.bottom.equalToSuperview().inset(22)
         }
 
         messageLabel.font = .systemFont(ofSize: 28, weight: .medium)
@@ -178,28 +196,34 @@ final class VideoPlayerRouteInfoViewController: UIViewController {
 
         let name = Self.name(of: status.host)
         if status.isStalled {
-            dot.backgroundColor = .systemOrange
+            statusDot.tone = .warning
             healthLabel.text = "正在缓冲"
         } else if let mbps = status.sustainedMbps, let required = status.requiredMbps, mbps < required * 1.2,
                   (status.bufferSeconds ?? 0) < 30
         {
-            dot.backgroundColor = .systemYellow
+            statusDot.tone = .warning
             healthLabel.text = "网速偏慢"
         } else {
-            dot.backgroundColor = .systemGreen
+            statusDot.tone = .good
             healthLabel.text = "播放流畅"
         }
         hostLabel.text = status.isIssuedHost ? "原生线路 · \(name)" : "已切换到 \(name)"
         switchesLabel.text = status.switches == 0 ? "本视频未切换线路" : "本视频切换了 \(status.switches) 次线路"
 
-        let shown = status.currentMbps ?? status.sustainedMbps
-        let rate = NSMutableAttributedString(string: shown.map { String(format: "%.1f", $0) } ?? "—",
-                                             attributes: [.font: UIFont.systemFont(ofSize: 44, weight: .bold)])
-        rate.append(NSAttributedString(string: " Mbps", attributes: [.font: UIFont.systemFont(ofSize: 24, weight: .semibold),
-                                                                     .foregroundColor: Theme.textSecondary]))
-        rateLabel.attributedText = rate
+        // Ease toward the new reading, as the userscript's display does.
+        if let reading = status.currentMbps ?? status.sustainedMbps {
+            shownMbps = shownMbps.map { $0 + (reading - $0) * 0.45 } ?? reading
+        }
+        peakMbps = max(peakMbps, status.recentMbps.max() ?? 0, status.currentMbps ?? 0)
+        let value = NSMutableAttributedString(string: shownMbps.map { String(format: "%.1f", $0) } ?? "—",
+                                              attributes: [.font: UIFont.monospacedDigitSystemFont(ofSize: 52, weight: .bold),
+                                                           .foregroundColor: Theme.accent])
+        value.append(NSAttributedString(string: " Mbps", attributes: [.font: UIFont.systemFont(ofSize: 24, weight: .semibold),
+                                                                      .foregroundColor: Theme.textTertiary]))
+        speedValueLabel.attributedText = value
+        peakLabel.text = peakMbps > 0 ? String(format: "峰值 %.1f Mbps", peakMbps) : nil
         bufferLabel.text = status.bufferSeconds.map { "缓冲 \(Int($0.rounded())) 秒" }
-        sparkline.update(values: status.recentMbps, reference: status.requiredMbps)
+        chart.update(values: status.recentMbps, reference: status.requiredMbps)
 
         switch status.test {
         case .none:
@@ -243,7 +267,8 @@ final class VideoPlayerRouteInfoViewController: UIViewController {
         let wrapper = UIView()
         wrapper.addSubview(view)
         view.snp.makeConstraints { make in
-            make.leading.trailing.equalToSuperview()
+            make.leading.equalToSuperview()
+            make.trailing.lessThanOrEqualToSuperview()
             make.centerY.equalToSuperview()
             make.top.greaterThanOrEqualToSuperview()
         }
@@ -251,26 +276,97 @@ final class VideoPlayerRouteInfoViewController: UIViewController {
     }
 }
 
-/// The download speed over the last 30 seconds, with the video's bitrate dashed for scale.
-private final class SparklineView: UIView {
-    private let line = CAShapeLayer()
-    private let reference = CAShapeLayer()
-    private var values: [Double] = []
-    private var referenceValue: Double?
+/// The status dot: a colored dot in a soft halo of the same color.
+private final class StatusDotView: UIView {
+    enum Tone {
+        case good
+        case warning
+    }
+
+    private static let good = UIColor(red: 46 / 255, green: 211 / 255, blue: 160 / 255, alpha: 1)
+    private static let warning = UIColor(red: 240 / 255, green: 168 / 255, blue: 56 / 255, alpha: 1)
+
+    var tone = Tone.good {
+        didSet { updateColors() }
+    }
+
+    private let dot = UIView()
 
     override init(frame: CGRect) {
         super.init(frame: frame)
-        reference.strokeColor = UIColor(white: 1, alpha: 0.3).cgColor
+        layer.cornerRadius = 40
+        dot.layer.cornerRadius = 12
+        addSubview(dot)
+        snp.makeConstraints { make in
+            make.size.equalTo(80)
+        }
+        dot.snp.makeConstraints { make in
+            make.center.equalToSuperview()
+            make.size.equalTo(24)
+        }
+        updateColors()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    private func updateColors() {
+        let color = tone == .good ? Self.good : Self.warning
+        dot.backgroundColor = color
+        backgroundColor = color.withAlphaComponent(0.18)
+    }
+}
+
+/// The download speed over the last 30 seconds, drawn as the userscript draws it: a 3-point
+/// moving average through a monotone cubic curve, a gradient fill under it, a dot on the latest
+/// value, and a y-axis that eases toward a round maximum. The video's bitrate is dashed for scale.
+private final class SpeedChartView: UIView {
+    private let fill = CAGradientLayer()
+    private let fillMask = CAShapeLayer()
+    private let line = CAShapeLayer()
+    private let reference = CAShapeLayer()
+    private let leadDot = CAShapeLayer()
+    private let referenceLabel = UILabel()
+    private let waitingLabel = UILabel()
+    private var values: [Double] = []
+    private var referenceValue: Double?
+    /// The y-axis maximum shown, eased toward a round ceiling so rescaling glides.
+    private var shownMax: Double = 0
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        let accent = Theme.accent
+        fill.colors = [accent.withAlphaComponent(0.32).cgColor, accent.withAlphaComponent(0.02).cgColor]
+        fill.mask = fillMask
+        layer.addSublayer(fill)
+        reference.strokeColor = UIColor(white: 1, alpha: 0.28).cgColor
         reference.lineWidth = 2
         reference.lineDashPattern = [6, 6]
         reference.fillColor = nil
         layer.addSublayer(reference)
-        line.strokeColor = Theme.accent.cgColor
-        line.lineWidth = 3
+        line.strokeColor = accent.cgColor
+        line.lineWidth = 4
         line.lineJoin = .round
         line.lineCap = .round
         line.fillColor = nil
         layer.addSublayer(line)
+        leadDot.fillColor = accent.cgColor
+        leadDot.strokeColor = UIColor(white: 0.12, alpha: 1).cgColor
+        leadDot.lineWidth = 3
+        layer.addSublayer(leadDot)
+        referenceLabel.font = .systemFont(ofSize: 18, weight: .medium)
+        referenceLabel.textColor = UIColor(white: 1, alpha: 0.45)
+        addSubview(referenceLabel)
+        waitingLabel.text = "等待播放…"
+        waitingLabel.font = .systemFont(ofSize: 22)
+        waitingLabel.textColor = Theme.textTertiary
+        waitingLabel.textAlignment = .center
+        addSubview(waitingLabel)
+        waitingLabel.snp.makeConstraints { make in
+            make.center.equalToSuperview()
+        }
     }
 
     @available(*, unavailable)
@@ -279,34 +375,129 @@ private final class SparklineView: UIView {
     }
 
     func update(values: [Double], reference: Double?) {
-        self.values = values
+        self.values = Self.smoothed(values)
         referenceValue = reference
+        let dataMax = max(self.values.max() ?? 0, (reference ?? 0) * 1.25, 1)
+        let target = Self.niceCeil(dataMax)
+        shownMax = shownMax > 0 ? shownMax + (target - shownMax) * 0.25 : target
         setNeedsLayout()
     }
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        line.frame = bounds
-        reference.frame = bounds
-        let top = max(values.max() ?? 0, (referenceValue ?? 0) * 1.5, 1)
-        let height = bounds.height - 4
-        func y(_ value: Double) -> CGFloat {
-            bounds.height - 2 - CGFloat(min(value, top) / top) * height
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
+        for sublayer in [fill, line, reference, leadDot] as [CALayer] {
+            sublayer.frame = bounds
         }
+        fillMask.frame = bounds
+
+        let hasData = values.count >= 2
+        waitingLabel.isHidden = hasData
+        [fill, line, leadDot].forEach { $0.isHidden = !hasData }
+        guard hasData, bounds.width > 0 else {
+            reference.path = nil
+            referenceLabel.isHidden = true
+            return
+        }
+        let top = max(shownMax, 1)
+        let padTop: CGFloat = 10
+        let padBottom: CGFloat = 4
+        let height = bounds.height - padTop - padBottom
+        func y(_ value: Double) -> CGFloat {
+            bounds.height - padBottom - CGFloat(min(value, top) / top) * height
+        }
+        // While the series fills, it stretches across the width; once full, it slides.
+        let step = bounds.width / CGFloat(values.count - 1)
+        let xs = values.indices.map { CGFloat($0) * step }
+        let ys = values.map(y)
+        let curve = Self.monotonePath(xs: xs, ys: ys)
+        line.path = curve.cgPath
+
+        let area = curve.copy() as! UIBezierPath
+        area.addLine(to: CGPoint(x: xs[xs.count - 1], y: bounds.height))
+        area.addLine(to: CGPoint(x: xs[0], y: bounds.height))
+        area.close()
+        fillMask.path = area.cgPath
+
+        let last = CGPoint(x: xs[xs.count - 1], y: ys[ys.count - 1])
+        leadDot.path = UIBezierPath(arcCenter: last, radius: 7, startAngle: 0, endAngle: .pi * 2, clockwise: true).cgPath
+
+        if let referenceValue, referenceValue > 0 {
+            let ry = y(referenceValue)
+            let dashed = UIBezierPath()
+            dashed.move(to: CGPoint(x: 0, y: ry))
+            dashed.addLine(to: CGPoint(x: bounds.width, y: ry))
+            reference.path = dashed.cgPath
+            referenceLabel.text = String(format: "码率 %.1f", referenceValue)
+            referenceLabel.sizeToFit()
+            referenceLabel.frame.origin = CGPoint(x: 0, y: max(0, ry - referenceLabel.bounds.height - 2))
+            referenceLabel.isHidden = false
+        } else {
+            reference.path = nil
+            referenceLabel.isHidden = true
+        }
+    }
+
+    /// Light 3-point moving average, to calm per-second jitter before the curve.
+    private static func smoothed(_ values: [Double]) -> [Double] {
+        guard values.count >= 3 else { return values }
+        var out = values
+        for i in 1..<(values.count - 1) {
+            out[i] = (values[i - 1] + values[i] * 2 + values[i + 1]) / 4
+        }
+        return out
+    }
+
+    /// Rounds up to 1, 2 or 5 times a power of ten.
+    private static func niceCeil(_ value: Double) -> Double {
+        guard value > 0 else { return 1 }
+        let power = pow(10, floor(log10(value)))
+        let n = value / power
+        let step: Double = n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10
+        return step * power
+    }
+
+    /// A curve through every point with no overshoot (Fritsch–Carlson monotone cubic tangents).
+    private static func monotonePath(xs: [CGFloat], ys: [CGFloat]) -> UIBezierPath {
         let path = UIBezierPath()
-        if values.count > 1 {
-            let step = bounds.width / CGFloat(values.count - 1)
-            for (index, value) in values.enumerated() {
-                let point = CGPoint(x: CGFloat(index) * step, y: y(value))
-                index == 0 ? path.move(to: point) : path.addLine(to: point)
+        path.move(to: CGPoint(x: xs[0], y: ys[0]))
+        let n = xs.count
+        guard n >= 2 else { return path }
+        var slopes = [CGFloat](repeating: 0, count: n - 1)
+        for i in 0..<(n - 1) {
+            slopes[i] = (ys[i + 1] - ys[i]) / (xs[i + 1] - xs[i])
+        }
+        var tangents = [CGFloat](repeating: 0, count: n)
+        tangents[0] = slopes[0]
+        tangents[n - 1] = slopes[n - 2]
+        if n > 2 {
+            for i in 1..<(n - 1) {
+                tangents[i] = slopes[i - 1] * slopes[i] <= 0 ? 0 : (slopes[i - 1] + slopes[i]) / 2
             }
         }
-        line.path = path.cgPath
-        let dashed = UIBezierPath()
-        if let referenceValue, referenceValue > 0 {
-            dashed.move(to: CGPoint(x: 0, y: y(referenceValue)))
-            dashed.addLine(to: CGPoint(x: bounds.width, y: y(referenceValue)))
+        for i in 0..<(n - 1) {
+            if slopes[i] == 0 {
+                tangents[i] = 0
+                tangents[i + 1] = 0
+                continue
+            }
+            let a = tangents[i] / slopes[i]
+            let b = tangents[i + 1] / slopes[i]
+            let s = a * a + b * b
+            if s > 9 {
+                let tau = 3 / sqrt(s)
+                tangents[i] = tau * a * slopes[i]
+                tangents[i + 1] = tau * b * slopes[i]
+            }
         }
-        reference.path = dashed.cgPath
+        for i in 0..<(n - 1) {
+            let dx = (xs[i + 1] - xs[i]) / 3
+            path.addCurve(to: CGPoint(x: xs[i + 1], y: ys[i + 1]),
+                          controlPoint1: CGPoint(x: xs[i] + dx, y: ys[i] + tangents[i] * dx),
+                          controlPoint2: CGPoint(x: xs[i + 1] - dx, y: ys[i + 1] - tangents[i + 1] * dx))
+        }
+        return path
     }
 }
