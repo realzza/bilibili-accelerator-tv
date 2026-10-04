@@ -313,6 +313,13 @@ class VideoPlayerViewModel {
         }.store(in: &cancellable)
 
         let playlist = VideoPlayListPlugin(sequenceProvider: sequenceProvider)
+        // A single video offers the top related one in its Up Next card.
+        if playMode == .regular, !data.isBangumi,
+           let related = data.detail?.Related.first(where: { $0.cid > 0 && $0.aid != playInfo.aid })
+        {
+            playlist.fallbackNext = PlayInfo(aid: related.aid, cid: related.cid, title: related.title,
+                                             ownerName: related.ownerName, coverURL: related.pic)
+        }
         playlist.onPlayEnd = { [weak self] in
             guard self?.playMode == .regular else { return }
             self?.onExit?()
