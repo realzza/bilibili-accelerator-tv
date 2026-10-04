@@ -893,6 +893,19 @@ struct VideoDetail: Codable, Hashable {
             struct UgcVideoInfo: Codable, Hashable, DisplayData {
                 var ownerName: String { "" }
                 var pic: URL? { arc.pic }
+                var date: String? { DateFormatter.stringFor(timestamp: arc.ctime) }
+                var overlay: DisplayOverlay? {
+                    var left = [DisplayOverlay.DisplayOverlayItem]()
+                    var right = [DisplayOverlay.DisplayOverlayItem]()
+                    if let view = arc.stat?.view, view > 0 {
+                        left.append(.init(icon: nil, text: view.numberString() + "播放"))
+                    }
+                    if let duration = arc.duration, duration > 0 {
+                        right.append(.init(icon: nil, text: TimeInterval(duration).timeString()))
+                    }
+                    return DisplayOverlay(leftItems: left, rightItems: right)
+                }
+
                 let id: Int
                 let aid: Int
                 let cid: Int
@@ -902,6 +915,12 @@ struct VideoDetail: Codable, Hashable {
                 struct Arc: Codable, Hashable {
                     let pic: URL
                     let ctime: Int
+                    let duration: Int?
+                    let stat: Stat?
+
+                    struct Stat: Codable, Hashable {
+                        let view: Int?
+                    }
                 }
             }
         }
@@ -1008,6 +1027,9 @@ struct Replys: Codable, Hashable {
         let member: Member
         let content: Content
         let replies: [Reply]?
+        /// Likes, and when it was posted, as a Unix time.
+        let like: Int?
+        let ctime: Int?
     }
 
     let replies: [Reply]?

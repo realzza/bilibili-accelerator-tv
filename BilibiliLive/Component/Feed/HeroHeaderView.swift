@@ -157,7 +157,8 @@ final class HeroHeaderView: UICollectionReusableView {
         metaLabel.text = meta
         let description = description?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         descriptionLabel.text = description
-        descriptionLabel.isHidden = description.isEmpty || description == "-"
+        // Many uploaders repeat the title as the description.
+        descriptionLabel.isHidden = description.isEmpty || description == "-" || description == title
         upButton.isHidden = !hasUpSpace
         if var cover {
             if cover.scheme == nil {
