@@ -41,9 +41,10 @@ final class VideoPlayerInfoTabsPlugin: NSObject, CommonPlayerPlugin {
     private let relatedInfoViewController = VideoPlayerDiscoveryInfoViewController(title: DiscoverySource.related.tabTitle,
                                                                                    emptyText: DiscoverySource.related.emptyText)
     private let actionInfoViewController: VideoPlayerActionInfoViewController
-    private let relatedCandidates: [PlayInfo]
+    private let relatedEntries: [VideoPlayerDiscoveryInfoViewController.Entry]
     private let ownerMid: Int
-    private var uploaderEntries = [PlayInfo]()
+    private var uploaderEntries = [VideoPlayerDiscoveryInfoViewController.Entry]()
+    private var isLoadingUploader = false
     private var uploaderLoadTask: Task<Void, Never>?
     private weak var playerVC: AVPlayerViewController?
 
@@ -51,7 +52,7 @@ final class VideoPlayerInfoTabsPlugin: NSObject, CommonPlayerPlugin {
         self.currentPlayInfo = currentPlayInfo
         self.sequenceProvider = sequenceProvider
         ownerMid = detail?.View.owner.mid ?? 0
-        relatedCandidates = Self.makeRelatedEntries(detail: detail, currentPlayInfo: currentPlayInfo)
+        relatedEntries = Self.makeRelatedEntries(detail: detail, currentPlayInfo: currentPlayInfo)
         actionInfoViewController = VideoPlayerActionInfoViewController(detail: detail)
         super.init()
 
@@ -94,6 +95,8 @@ final class VideoPlayerInfoTabsPlugin: NSObject, CommonPlayerPlugin {
 
     private func loadUploaderEntriesIfNeeded() {
         guard ownerMid > 0 else { return }
+        isLoadingUploader = true
+        refreshDiscoveryTabs()
         uploaderLoadTask = Task { [weak self] in
             guard let self else { return }
             do {
@@ -101,22 +104,24 @@ final class VideoPlayerInfoTabsPlugin: NSObject, CommonPlayerPlugin {
                 guard !Task.isCancelled else { return }
 
                 var seenAids = Set<Int>()
-                let entries = records.compactMap { record -> PlayInfo? in
+                let entries = records.compactMap { record -> VideoPlayerDiscoveryInfoViewController.Entry? in
                     guard record.aid > 0,
                           record.aid != self.currentPlayInfo.aid,
                           seenAids.insert(record.aid).inserted
                     else {
                         return nil
                     }
-                    return PlayInfo(aid: record.aid,
-                                    title: record.title,
-                                    ownerName: record.ownerName,
-                                    coverURL: record.pic)
+                    let playInfo = PlayInfo(aid: record.aid,
+                                            title: record.title,
+                                            ownerName: record.ownerName,
+                                            coverURL: record.pic)
+                    return .init(playInfo: playInfo, displayData: AnyDispplayData(data: record))
                 }
 
                 await MainActor.run {
                     guard !Task.isCancelled else { return }
-                    self.uploaderEntries = Array(entries.prefix(6))
+                    self.uploaderEntries = Array(entries.prefix(12))
+                    self.isLoadingUploader = false
                     self.refreshDiscoveryTabs()
                 }
             } catch {
@@ -124,6 +129,7 @@ final class VideoPlayerInfoTabsPlugin: NSObject, CommonPlayerPlugin {
                 await MainActor.run {
                     guard !Task.isCancelled else { return }
                     self.uploaderEntries = []
+                    self.isLoadingUploader = false
                     self.refreshDiscoveryTabs()
                 }
             }
@@ -131,15 +137,8 @@ final class VideoPlayerInfoTabsPlugin: NSObject, CommonPlayerPlugin {
     }
 
     private func refreshDiscoveryTabs() {
-        uploaderInfoViewController.update(entries: uploaderEntries.prefix(6).map(makeViewEntry(from:)))
-        relatedInfoViewController.update(entries: relatedCandidates.prefix(6).map(makeViewEntry(from:)))
-    }
-
-    private func makeViewEntry(from playInfo: PlayInfo) -> VideoPlayerDiscoveryInfoViewController.Entry {
-        VideoPlayerDiscoveryInfoViewController.Entry(playInfo: playInfo,
-                                                     displayData: VideoPlayerDiscoveryInfoViewController.DiscoveryDisplayData(title: playInfo.title ?? "",
-                                                                                                                              ownerName: playInfo.ownerName ?? "",
-                                                                                                                              pic: playInfo.coverURL))
+        uploaderInfoViewController.update(entries: uploaderEntries, isLoading: isLoadingUploader)
+        relatedInfoViewController.update(entries: Array(relatedEntries.prefix(12)))
     }
 
     private func refreshCustomInfoViewControllers() {
@@ -164,10 +163,10 @@ final class VideoPlayerInfoTabsPlugin: NSObject, CommonPlayerPlugin {
         }
     }
 
-    private static func makeRelatedEntries(detail: VideoDetail?, currentPlayInfo: PlayInfo) -> [PlayInfo] {
+    private static func makeRelatedEntries(detail: VideoDetail?, currentPlayInfo: PlayInfo) -> [VideoPlayerDiscoveryInfoViewController.Entry] {
         let related = detail?.Related ?? []
         var seenAids = Set<Int>()
-        return related.compactMap { info -> PlayInfo? in
+        return related.compactMap { info -> VideoPlayerDiscoveryInfoViewController.Entry? in
             guard info.aid > 0,
                   info.aid != currentPlayInfo.aid,
                   seenAids.insert(info.aid).inserted
@@ -175,11 +174,12 @@ final class VideoPlayerInfoTabsPlugin: NSObject, CommonPlayerPlugin {
                 return nil
             }
 
-            return PlayInfo(aid: info.aid,
-                            cid: info.cid,
-                            title: info.title,
-                            ownerName: info.ownerName,
-                            coverURL: info.pic)
+            let playInfo = PlayInfo(aid: info.aid,
+                                    cid: info.cid,
+                                    title: info.title,
+                                    ownerName: info.ownerName,
+                                    coverURL: info.pic)
+            return .init(playInfo: playInfo, displayData: AnyDispplayData(data: info))
         }
     }
 }

@@ -33,7 +33,7 @@ final class VideoPlayerInfoActionCell: BLMotionCollectionViewCell {
         blurView.layer.cornerCurve = .continuous
         blurView.clipsToBounds = true
 
-        focusedBackgroundView.backgroundColor = .white
+        focusedBackgroundView.backgroundColor = Theme.focusedFill
         focusedBackgroundView.isHidden = true
         blurView.contentView.addSubview(focusedBackgroundView)
         focusedBackgroundView.translatesAutoresizingMaskIntoConstraints = false
@@ -94,15 +94,16 @@ final class VideoPlayerInfoActionCell: BLMotionCollectionViewCell {
         updateAppearance()
     }
 
+    /// White when focused; an action already taken shows its icon in pink, as on the video page.
     private func updateAppearance() {
         guard let viewModel else { return }
         focusedBackgroundView.isHidden = !isFocused
         let iconName = viewModel.isOn ? viewModel.selectedImageName : viewModel.imageName
         imageView.image = UIImage(systemName: iconName)
-        let foregroundColor: UIColor = isFocused ? .black : .white
-        imageView.tintColor = foregroundColor
+        let foregroundColor = isFocused ? Theme.focusedText : Theme.textPrimary
+        imageView.tintColor = viewModel.isOn ? Theme.accent : foregroundColor
         titleLabel.textColor = foregroundColor
-        valueLabel.textColor = isFocused ? UIColor.black.withAlphaComponent(0.85) : UIColor.white.withAlphaComponent(0.8)
+        valueLabel.textColor = isFocused ? Theme.focusedText.withAlphaComponent(0.7) : Theme.textSecondary
     }
 }
 

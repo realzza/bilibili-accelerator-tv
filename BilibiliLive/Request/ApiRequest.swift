@@ -418,7 +418,8 @@ enum ApiRequest {
 
     struct UpSpaceListData: Codable, Hashable, DisplayData, PlayableData {
         let title: String
-        let author: String
+        /// Missing on some items, such as videos co-created with other uploaders.
+        let author: String?
         let param: String
         let cover: URL?
         let play: Int
@@ -432,7 +433,7 @@ enum ApiRequest {
 
         // DisplayData
         var ownerName: String {
-            return author
+            return author ?? ""
         }
 
         var pic: URL? { return cover }

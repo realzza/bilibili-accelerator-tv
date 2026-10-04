@@ -8,30 +8,27 @@
 import AVKit
 import UIKit
 
+/// 博主视频 or 相关视频 in the player's info panel: a row of video cards, as in the rest of the
+/// app, on the dark card the 线路 tab uses.
 final class VideoPlayerDiscoveryInfoViewController: UIViewController {
     private enum Layout {
-        static let cardWidth: CGFloat = 320
-        static let cardHeight: CGFloat = 248
-        static let sectionInsets = NSDirectionalEdgeInsets(top: 28, leading: 32, bottom: 28, trailing: 32)
-        static let interGroupSpacing: CGFloat = 28
-        static let preferredHeight: CGFloat = 360
+        static let cardWidth: CGFloat = 360
+        static let cardHeight: CGFloat = 282
+        static let sectionInsets = NSDirectionalEdgeInsets(top: 30, leading: 40, bottom: 26, trailing: 40)
+        static let interGroupSpacing: CGFloat = 40
+        static let preferredHeight: CGFloat = 340
     }
 
     struct Entry: Hashable {
         let playInfo: PlayInfo
-        let displayData: DiscoveryDisplayData
-    }
-
-    struct DiscoveryDisplayData: DisplayData {
-        let title: String
-        let ownerName: String
-        let pic: URL?
+        let displayData: AnyDispplayData
     }
 
     var onSelect: ((PlayInfo) -> Void)?
 
     private let emptyText: String
     private var entries = [Entry]()
+    private var isLoading = false
 
     private lazy var collectionView: UICollectionView = {
         let layout = UICollectionViewCompositionalLayout { _, _ in
@@ -50,23 +47,29 @@ final class VideoPlayerDiscoveryInfoViewController: UIViewController {
 
         let collectionView = UICollectionView(frame: .zero, collectionViewLayout: layout)
         collectionView.backgroundColor = .clear
+        // Clipped to the card; the section's insets leave room for a focused card to grow.
+        collectionView.clipsToBounds = true
         collectionView.delegate = self
         collectionView.dataSource = self
         collectionView.remembersLastFocusedIndexPath = true
         collectionView.alwaysBounceVertical = false
-        collectionView.register(RelatedVideoCell.self, forCellWithReuseIdentifier: String(describing: RelatedVideoCell.self))
+        collectionView.register(FeedCollectionViewCell.self, forCellWithReuseIdentifier: String(describing: FeedCollectionViewCell.self))
         return collectionView
     }()
 
-    private let emptyLabel: UILabel = {
+    /// The info panel draws nothing behind a custom tab; text needs a ground over a bright picture.
+    private let card = UIVisualEffectView(effect: UIBlurEffect(style: .dark))
+    private let stateLabel: UILabel = {
         let label = UILabel()
         label.font = .systemFont(ofSize: 28, weight: .medium)
-        label.textColor = UIColor.white.withAlphaComponent(0.75)
+        label.textColor = Theme.textSecondary
         label.numberOfLines = 2
         label.textAlignment = .center
         label.isHidden = true
         return label
     }()
+
+    private let spinner = UIActivityIndicatorView(style: .medium)
 
     init(title: String, emptyText: String) {
         self.emptyText = emptyText
@@ -83,37 +86,50 @@ final class VideoPlayerDiscoveryInfoViewController: UIViewController {
         super.viewDidLoad()
         preferredContentSize = CGSize(width: 0, height: Layout.preferredHeight)
         view.backgroundColor = .clear
-        emptyLabel.text = emptyText
 
+        card.layer.cornerRadius = 36
+        card.layer.cornerCurve = .continuous
+        card.clipsToBounds = true
+        view.addSubview(card)
         view.addSubview(collectionView)
-        view.addSubview(emptyLabel)
-        collectionView.translatesAutoresizingMaskIntoConstraints = false
-        emptyLabel.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            collectionView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            collectionView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            collectionView.topAnchor.constraint(equalTo: view.topAnchor),
-            collectionView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-
-            emptyLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            emptyLabel.centerYAnchor.constraint(equalTo: view.centerYAnchor),
-            emptyLabel.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 32),
-            emptyLabel.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -32),
-        ])
-        updateEmptyState()
+        view.addSubview(stateLabel)
+        view.addSubview(spinner)
+        spinner.color = Theme.textSecondary
+        card.snp.makeConstraints { make in
+            make.edges.equalToSuperview()
+        }
+        collectionView.snp.makeConstraints { make in
+            make.edges.equalToSuperview()
+        }
+        stateLabel.snp.makeConstraints { make in
+            make.center.equalToSuperview()
+            make.leading.greaterThanOrEqualToSuperview().offset(32)
+        }
+        spinner.snp.makeConstraints { make in
+            make.center.equalToSuperview()
+        }
+        updateState()
     }
 
-    func update(entries: [Entry]) {
+    /// Shows `entries`; while `isLoading`, a spinner stands in for an empty row.
+    func update(entries: [Entry], isLoading: Bool = false) {
         self.entries = entries
+        self.isLoading = isLoading
         guard isViewLoaded else { return }
         collectionView.reloadData()
-        updateEmptyState()
+        updateState()
     }
 
-    private func updateEmptyState() {
+    private func updateState() {
         let isEmpty = entries.isEmpty
-        emptyLabel.isHidden = !isEmpty
         collectionView.isHidden = isEmpty
+        stateLabel.text = emptyText
+        stateLabel.isHidden = !isEmpty || isLoading
+        if isEmpty, isLoading {
+            spinner.startAnimating()
+        } else {
+            spinner.stopAnimating()
+        }
     }
 }
 
@@ -128,9 +144,10 @@ extension VideoPlayerDiscoveryInfoViewController: UICollectionViewDataSource, UI
 
     func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
         let entry = entries[indexPath.item]
-        let cell = collectionView.dequeueReusableCell(withReuseIdentifier: String(describing: RelatedVideoCell.self),
-                                                      for: indexPath) as! RelatedVideoCell
-        cell.update(data: entry.displayData)
+        let cell = collectionView.dequeueReusableCell(withReuseIdentifier: String(describing: FeedCollectionViewCell.self),
+                                                      for: indexPath) as! FeedCollectionViewCell
+        cell.styleOverride = .sideBar
+        cell.setup(data: entry.displayData.data)
         return cell
     }
 
