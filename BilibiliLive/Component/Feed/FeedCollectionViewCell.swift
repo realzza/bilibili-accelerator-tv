@@ -123,11 +123,9 @@ class FeedCollectionViewCell: BLMotionCollectionViewCell {
         viewsLabel.isHidden = facts.views == nil
         progress = data.watchProgress
         if let badge = data.overlay?.badge, !badge.text.isEmpty {
-            badgeLabel.text = badge.text
-            badgeLabel.backgroundColor = badge.color ?? Theme.accent
-            badgeLabel.isHidden = false
+            setBadge(badge.text, color: badge.color ?? Theme.accent)
         } else {
-            badgeLabel.isHidden = true
+            setBadge(nil)
         }
         if var pic = data.pic {
             if pic.scheme == nil {
@@ -140,20 +138,42 @@ class FeedCollectionViewCell: BLMotionCollectionViewCell {
 
     private static let pillFont = UIFont.systemFont(ofSize: 20, weight: .semibold)
 
-    /// `▶ 18.6万` for `18.6万播放` or `18.6万观看`, to sit on the thumbnail like the duration.
+    /// A label at the top left of the thumbnail, such as 直播中 or 正在看; nil hides it.
+    func setBadge(_ text: String?, color: UIColor = Theme.accent) {
+        badgeLabel.text = text
+        badgeLabel.font = .systemFont(ofSize: 18, weight: .bold)
+        badgeLabel.insets = UIEdgeInsets(top: 4, left: 10, bottom: 4, right: 10)
+        badgeLabel.backgroundColor = color
+        badgeLabel.textColor = Theme.onAccent
+        badgeLabel.isHidden = text == nil
+    }
+
+    /// A ranking's place at the top left of the thumbnail: pink for the top three.
+    func setRank(_ rank: Int) {
+        badgeLabel.text = "\(rank)"
+        badgeLabel.font = .monospacedDigitSystemFont(ofSize: 24, weight: .heavy)
+        badgeLabel.insets = UIEdgeInsets(top: 2, left: 14, bottom: 2, right: 14)
+        badgeLabel.backgroundColor = rank <= 3 ? Theme.accent : Theme.badgeFill
+        badgeLabel.textColor = rank <= 3 ? Theme.onAccent : Theme.textPrimary
+        badgeLabel.isHidden = false
+    }
+
+    /// `▶ 18.6万` for `18.6万播放` or `18.6万观看`, and `👤 945` for `945人在看` on a live room, to
+    /// sit on the thumbnail like the duration.
     static func viewsText(_ views: String) -> NSAttributedString {
         var count = views
-        for suffix in ["播放", "观看"] where count.hasSuffix(suffix) {
+        let isLive = views.hasSuffix("在看")
+        for suffix in ["播放", "观看", "人在看", "在看"] where count.hasSuffix(suffix) {
             count = String(count.dropLast(suffix.count))
         }
         let text = NSMutableAttributedString()
-        let symbol = UIImage(systemName: "play.fill",
+        let symbol = UIImage(systemName: isLive ? "person.fill" : "play.fill",
                              withConfiguration: UIImage.SymbolConfiguration(font: pillFont, scale: .small))
         if let symbol = symbol?.withTintColor(Theme.textPrimary, renderingMode: .alwaysOriginal) {
             text.append(NSAttributedString(attachment: NSTextAttachment(image: symbol)))
             text.append(NSAttributedString(string: " "))
         }
-        text.append(NSAttributedString(string: count.trimmingCharacters(in: .whitespaces)))
+        text.append(NSAttributedString(string: count.replacingOccurrences(of: " ", with: "")))
         text.addAttributes([.font: pillFont, .foregroundColor: Theme.textPrimary], range: NSRange(location: 0, length: text.length))
         return text
     }
@@ -312,7 +332,7 @@ struct CardFacts {
                 duration = text
             } else if text.hasSuffix("弹幕") || (item.icon == "list.bullet.rectangle" && CardFacts.isCount(text)) {
                 continue
-            } else if views == nil, text.hasSuffix("观看") || text.hasSuffix("播放") {
+            } else if views == nil, text.hasSuffix("观看") || text.hasSuffix("播放") || text.hasSuffix("在看") {
                 views = text
             } else if views == nil, item.icon == "play.rectangle", CardFacts.isCount(text) {
                 views = text.replacingOccurrences(of: " ", with: "") + "播放"

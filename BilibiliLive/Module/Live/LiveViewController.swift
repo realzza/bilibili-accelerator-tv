@@ -97,6 +97,8 @@ struct LiveRoom: DisplayData, Codable {
     let keyframe: String?
     let face: URL?
     let cover_from_user: URL?
+    /// People watching now.
+    var online: Int? = nil
 
     var ownerName: String { uname }
     /// The live frame, or the room's own cover for rooms with no frame, such as rebroadcasts.
@@ -112,6 +114,9 @@ struct LiveRoom: DisplayData, Codable {
     var overlay: DisplayOverlay? {
         var leftItems = [DisplayOverlay.DisplayOverlayItem]()
         leftItems.append(DisplayOverlay.DisplayOverlayItem(icon: nil, text: area_v2_name))
+        if let online, online > 0 {
+            leftItems.append(DisplayOverlay.DisplayOverlayItem(icon: nil, text: online.numberString() + "人在看"))
+        }
         return DisplayOverlay(leftItems: leftItems, badge: .live)
     }
 }
@@ -182,6 +187,8 @@ struct AreaLiveRoom: DisplayData, Codable, PlayableData {
     let parent_name: String
     let area_name: String
     let area_v2_name: String
+    /// People watching now.
+    var online: Int? = nil
     var ownerName: String { uname }
     var pic: URL? { URL(string: system_cover) }
     var avatar: URL? { face }
@@ -191,10 +198,13 @@ struct AreaLiveRoom: DisplayData, Codable, PlayableData {
     var overlay: DisplayOverlay? {
         var leftItems = [DisplayOverlay.DisplayOverlayItem]()
         leftItems.append(DisplayOverlay.DisplayOverlayItem(icon: nil, text: area_v2_name))
+        if let online, online > 0 {
+            leftItems.append(DisplayOverlay.DisplayOverlayItem(icon: nil, text: online.numberString() + "人在看"))
+        }
         return DisplayOverlay(leftItems: leftItems, badge: .live)
     }
 
     func toLiveRoom() -> LiveRoom {
-        return LiveRoom(title: title, room_id: roomid, uname: uname, area_v2_name: area_v2_name, keyframe: system_cover.isEmpty ? nil : system_cover, face: face, cover_from_user: user_cover)
+        return LiveRoom(title: title, room_id: roomid, uname: uname, area_v2_name: area_v2_name, keyframe: system_cover.isEmpty ? nil : system_cover, face: face, cover_from_user: user_cover, online: online)
     }
 }

@@ -62,6 +62,7 @@ class RankingVideoContentViewController: StandardVideoCollectionViewController<V
 
     override func setupCollectionView() {
         collectionVC.styleOverride = .sideBar
+        collectionVC.showsRank = true
         super.setupCollectionView()
     }
 
@@ -88,6 +89,7 @@ class RankingSeasonContentViewController: StandardVideoCollectionViewController<
 
     override func setupCollectionView() {
         collectionVC.styleOverride = .sideBar
+        collectionVC.showsRank = true
         super.setupCollectionView()
     }
 

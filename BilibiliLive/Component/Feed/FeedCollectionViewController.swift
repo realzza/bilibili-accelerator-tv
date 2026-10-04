@@ -101,6 +101,8 @@ class FeedCollectionViewController: UIViewController {
     var finished = false
     var pageSize = 20
     var showHeader: Bool = false
+    /// Numbers the cards 1, 2, 3… for a ranking.
+    var showsRank = false
     var headerText = "" {
         didSet { refreshHeader() }
     }
@@ -310,6 +312,9 @@ class FeedCollectionViewController: UIViewController {
         DisplayCellRegistration { [weak self] cell, indexPath, displayData in
             cell.styleOverride = self?.styleOverride
             cell.setup(data: displayData.data)
+            if self?.showsRank == true {
+                cell.setRank(indexPath.item + 1)
+            }
             cell.onLongPress = {
                 self?.didLongPress?(displayData.data)
             }
