@@ -865,6 +865,8 @@ struct VideoDetail: Codable, Hashable {
         let redirect_url: URL?
         let stat: Stat
         var ctime: Int?
+        /// Only for those who charge the uploader (充电专属). Sent with a single video, not in lists.
+        var is_upower_exclusive: Bool?
         struct Stat: Codable, Hashable {
             let favorite: Int
             let coin: Int
@@ -967,6 +969,7 @@ extension VideoDetail.Info: DisplayData, PlayableData {
     }
 
     var date: String? { DateFormatter.stringFor(timestamp: pubdate) }
+    var accessTag: String? { is_upower_exclusive == true ? "充电专属" : nil }
 
     var overlay: DisplayOverlay? {
         var leftItems = [DisplayOverlay.DisplayOverlayItem]()

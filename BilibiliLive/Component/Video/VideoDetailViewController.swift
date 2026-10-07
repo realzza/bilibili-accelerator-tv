@@ -402,6 +402,7 @@ class VideoDetailViewController: UIViewController {
                      data.View.date.map(FeedCollectionViewCell.shortDate),
                      TimeInterval(data.View.duration).timeString()]
         header.statsLabel.text = stats.compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
+        header.setAccessTag(data.View.accessTag)
         header.coinButton.title = Self.count(data.View.stat.coin)
         header.favButton.title = Self.count(data.View.stat.favorite)
         header.likeButton.title = Self.count(data.View.stat.like)

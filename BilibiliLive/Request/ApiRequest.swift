@@ -426,6 +426,12 @@ enum ApiRequest {
         let danmaku: Int
         let duration: Int
         let ctime: Int
+        /// Tags Bilibili draws on the thumbnail, such as 充电专属.
+        let badges: [Badge]?
+
+        struct Badge: Codable, Hashable {
+            let text: String?
+        }
 
         // PlayableData
         var aid: Int { return Int(param) ?? 0 }
@@ -438,6 +444,7 @@ enum ApiRequest {
 
         var pic: URL? { return cover }
         var date: String? { DateFormatter.stringFor(timestamp: ctime) }
+        var accessTag: String? { badges?.compactMap(\.text).first { $0.contains("充电") } }
         var overlay: DisplayOverlay? {
             var leftItems = [DisplayOverlay.DisplayOverlayItem]()
             var rightItems = [DisplayOverlay.DisplayOverlayItem]()
