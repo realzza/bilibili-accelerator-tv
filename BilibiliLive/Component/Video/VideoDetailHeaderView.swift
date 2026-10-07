@@ -18,7 +18,8 @@ final class VideoDetailHeaderView: UIView {
     let followButton = UIButton(configuration: .capsule())
     let followersLabel = UILabel()
     let statsLabel = UILabel()
-    private let accessLabel = PillLabel()
+    /// The same size as the stats, so the two line up on one baseline.
+    private let accessTag = AccessTagView(font: .systemFont(ofSize: 23, weight: .semibold), fill: Theme.selectedFill, cornerRadius: 8)
     let noteView = NoteDetailView()
     let playButton = UIButton(configuration: .capsule())
     let likeButton = DetailActionButton(symbol: "hand.thumbsup", onSymbol: "hand.thumbsup.fill", title: "点赞")
@@ -47,8 +48,7 @@ final class VideoDetailHeaderView: UIView {
 
     /// Who may watch, such as 充电专属, as a tag before the stats; nil hides it.
     func setAccessTag(_ text: String?) {
-        accessLabel.attributedText = text.map { FeedCollectionViewCell.accessText($0, font: .systemFont(ofSize: 22, weight: .semibold)) }
-        accessLabel.isHidden = text == nil
+        accessTag.text = text
     }
 
     func setUploader(name: String, avatar: URL?) {
@@ -99,12 +99,6 @@ final class VideoDetailHeaderView: UIView {
         followersLabel.textColor = Theme.textTertiary
         statsLabel.font = .systemFont(ofSize: 23)
         statsLabel.textColor = Theme.textSecondary
-        // A metadata badge, as tvOS draws 4K or CC beside a title's details.
-        accessLabel.backgroundColor = Theme.selectedFill
-        accessLabel.layer.cornerRadius = 8
-        accessLabel.layer.cornerCurve = .continuous
-        accessLabel.clipsToBounds = true
-        accessLabel.isHidden = true
 
         var playConfig = playButton.configuration
         playConfig?.title = playTitle
@@ -127,9 +121,10 @@ final class VideoDetailHeaderView: UIView {
         actionRow.alignment = .top
         actionRow.spacing = 28
 
-        let statsRow = UIStackView(arrangedSubviews: [accessLabel, statsLabel])
+        // A metadata badge before the stats, as tvOS draws 4K or CC beside a title's details.
+        let statsRow = UIStackView(arrangedSubviews: [accessTag, statsLabel])
         statsRow.axis = .horizontal
-        statsRow.alignment = .center
+        statsRow.alignment = .firstBaseline
         statsRow.spacing = 16
 
         let stack = UIStackView(arrangedSubviews: [titleLabel, uploaderRow, statsRow, noteView, actionRow])

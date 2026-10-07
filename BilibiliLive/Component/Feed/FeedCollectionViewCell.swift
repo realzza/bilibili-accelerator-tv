@@ -24,7 +24,7 @@ class FeedCollectionViewCell: BLMotionCollectionViewCell {
     private let durationLabel = PillLabel()
     private let viewsLabel = PillLabel()
     private let badgeLabel = PillLabel()
-    private let accessLabel = PillLabel()
+    private let accessTag = AccessTagView(font: FeedCollectionViewCell.pillFont, fill: Theme.badgeFill, cornerRadius: 10)
     private let progressTrack = UIView()
     private let progressFill = UIView()
 
@@ -96,15 +96,11 @@ class FeedCollectionViewCell: BLMotionCollectionViewCell {
         badgeLabel.layer.cornerRadius = 10
         badgeLabel.clipsToBounds = true
 
-        artwork.addSubview(accessLabel)
-        accessLabel.snp.makeConstraints { make in
+        artwork.addSubview(accessTag)
+        accessTag.snp.makeConstraints { make in
             make.trailing.top.equalToSuperview().inset(12)
             make.leading.greaterThanOrEqualTo(badgeLabel.snp.trailing).offset(8)
         }
-        accessLabel.backgroundColor = Theme.badgeFill
-        accessLabel.layer.cornerRadius = 10
-        accessLabel.clipsToBounds = true
-        accessLabel.isHidden = true
 
         let stackView = UIStackView(arrangedSubviews: [titleLabel, metaLabel])
         stackView.axis = .vertical
@@ -139,8 +135,7 @@ class FeedCollectionViewCell: BLMotionCollectionViewCell {
         } else {
             setBadge(nil)
         }
-        accessLabel.attributedText = data.accessTag.map { Self.accessText($0, font: Self.pillFont) }
-        accessLabel.isHidden = data.accessTag == nil
+        accessTag.text = data.accessTag
         if var pic = data.pic {
             if pic.scheme == nil {
                 pic = URL(string: "http:\(pic.absoluteString)")!
@@ -160,23 +155,6 @@ class FeedCollectionViewCell: BLMotionCollectionViewCell {
         badgeLabel.backgroundColor = color
         badgeLabel.textColor = Theme.onAccent
         badgeLabel.isHidden = text == nil
-    }
-
-    /// `⚡ 充电专属`: who may watch, after a pink lightning bolt, the mark Bilibili gives such
-    /// videos. Drawn like the view count, on the same dark pill.
-    static func accessText(_ text: String, font: UIFont) -> NSAttributedString {
-        let result = NSMutableAttributedString()
-        let symbol = UIImage(systemName: "bolt.fill", withConfiguration: UIImage.SymbolConfiguration(font: font, scale: .small))
-        if let symbol = symbol?.withTintColor(Theme.accent, renderingMode: .alwaysOriginal) {
-            let attachment = NSTextAttachment(image: symbol)
-            // Centered on the capitals rather than sitting on the baseline.
-            attachment.bounds = CGRect(x: 0, y: (font.capHeight - symbol.size.height) / 2,
-                                       width: symbol.size.width, height: symbol.size.height)
-            result.append(NSAttributedString(attachment: attachment))
-            result.append(NSAttributedString(string: " ", attributes: [.font: font]))
-        }
-        result.append(NSAttributedString(string: text, attributes: [.font: font, .foregroundColor: Theme.textPrimary]))
-        return result
     }
 
     /// A ranking's place at the top left of the thumbnail: pink for the top three.
