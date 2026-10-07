@@ -3,6 +3,7 @@
 //  BilibiliLive
 //
 
+import AVFoundation
 import UIKit
 
 class SceneDelegate: UIResponder, UIWindowSceneDelegate {
@@ -30,6 +31,11 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             window.rootViewController = LoginViewController.create()
         }
         window.makeKeyAndVisible()
+    }
+
+    func sceneDidBecomeActive(_ scene: UIScene) {
+        // Picture in picture is only possible in the playback category.
+        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
     }
 
     func showLogin() {
