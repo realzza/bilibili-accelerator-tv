@@ -18,6 +18,7 @@ final class VideoDetailHeaderView: UIView {
     let followButton = UIButton(configuration: .capsule())
     let followersLabel = UILabel()
     let statsLabel = UILabel()
+    private let accessLabel = PillLabel()
     let noteView = NoteDetailView()
     let playButton = UIButton(configuration: .capsule())
     let likeButton = DetailActionButton(symbol: "hand.thumbsup", onSymbol: "hand.thumbsup.fill", title: "点赞")
@@ -42,6 +43,12 @@ final class VideoDetailHeaderView: UIView {
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    /// Who may watch, such as 充电专属, as a tag before the stats; nil hides it.
+    func setAccessTag(_ text: String?) {
+        accessLabel.attributedText = text.map { FeedCollectionViewCell.accessText($0, font: .systemFont(ofSize: 22, weight: .semibold)) }
+        accessLabel.isHidden = text == nil
     }
 
     func setUploader(name: String, avatar: URL?) {
@@ -92,6 +99,12 @@ final class VideoDetailHeaderView: UIView {
         followersLabel.textColor = Theme.textTertiary
         statsLabel.font = .systemFont(ofSize: 23)
         statsLabel.textColor = Theme.textSecondary
+        // A metadata badge, as tvOS draws 4K or CC beside a title's details.
+        accessLabel.backgroundColor = Theme.selectedFill
+        accessLabel.layer.cornerRadius = 8
+        accessLabel.layer.cornerCurve = .continuous
+        accessLabel.clipsToBounds = true
+        accessLabel.isHidden = true
 
         var playConfig = playButton.configuration
         playConfig?.title = playTitle
@@ -114,7 +127,12 @@ final class VideoDetailHeaderView: UIView {
         actionRow.alignment = .top
         actionRow.spacing = 28
 
-        let stack = UIStackView(arrangedSubviews: [titleLabel, uploaderRow, statsLabel, noteView, actionRow])
+        let statsRow = UIStackView(arrangedSubviews: [accessLabel, statsLabel])
+        statsRow.axis = .horizontal
+        statsRow.alignment = .center
+        statsRow.spacing = 16
+
+        let stack = UIStackView(arrangedSubviews: [titleLabel, uploaderRow, statsRow, noteView, actionRow])
         stack.axis = .vertical
         stack.alignment = .leading
         stack.spacing = 22

@@ -18,6 +18,9 @@ protocol DisplayData: Hashable, AvatarProviding {
     var overlay: DisplayOverlay? { get }
     /// How much was watched, 0 to 1, for a bar along the thumbnail; nil for none.
     var watchProgress: Double? { get }
+    /// Who may watch, such as 充电专属 for a video only for those who charge the uploader, for a
+    /// tag on the thumbnail; nil when anyone may.
+    var accessTag: String? { get }
 }
 
 extension DisplayData {
@@ -25,6 +28,7 @@ extension DisplayData {
     var date: String? { return nil }
     var overlay: DisplayOverlay? { return nil }
     var watchProgress: Double? { return nil }
+    var accessTag: String? { return nil }
 }
 
 struct AnyDispplayData: Hashable {

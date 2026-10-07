@@ -504,6 +504,11 @@ struct DynamicFeedData: Codable, PlayableData, DisplayData {
         modules.module_author.pub_time
     }
 
+    var accessTag: String? {
+        guard let text = modules.module_dynamic.major?.archive?.badge?.text, text.contains("充电") else { return nil }
+        return text
+    }
+
     var overlay: DisplayOverlay? {
         var leftItems = [DisplayOverlay.DisplayOverlayItem]()
         var rightItems = [DisplayOverlay.DisplayOverlayItem]()
@@ -583,10 +588,16 @@ struct DynamicFeedData: Codable, PlayableData, DisplayData {
                     let title: String?
                     let duration_text: String?
                     let stat: Stat?
+                    /// 投稿视频, or 充电专属 for a video only for those who charge the uploader.
+                    let badge: Badge?
 
                     struct Stat: Codable, Hashable {
                         let danmaku: String?
                         let play: String?
+                    }
+
+                    struct Badge: Codable, Hashable {
+                        let text: String?
                     }
                 }
 
