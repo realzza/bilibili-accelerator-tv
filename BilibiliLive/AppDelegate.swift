@@ -47,7 +47,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     #if DEBUG
         /// Commands from the accelerator's debug server, for driving tests from a Mac:
         /// `play?aid=&cid=` (or `epid=`), `detail?aid=&cid=`, `stop`, `home` (the tab bar, even when
-        /// signed out), `tab?index=`, `quality?qn=`, `seek?to=<fraction of the duration>`, `accel?on=0|1`,
+        /// signed out), `tab?index=`, `quality?qn=`, `speed?rate=`, `seek?to=<fraction of the duration>`, `accel?on=0|1`,
         /// `open?screen=` (accounts, tabs, login, up&mid=, or a page such as history), `playseq?ids=aid:cid,…` (play a sequence), `search?q=` (the search tab with a query), `route` (the 线路 tab on its own), `routetest` (its test button), `focus?x=&y=` (focus
         /// what is at that point), `select` (press what has focus), `press?x=&y=` (trigger what is at that point), `probe?class=&match=` (log a
         /// class's methods) and `call?sel=&arg=` (send one to the player, such as
@@ -60,6 +60,10 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
                       let duration = player.currentItem?.duration.seconds, duration.isFinite
                 else { return }
                 player.seek(to: CMTime(seconds: duration * min(max(fraction, 0), 1), preferredTimescale: 600))
+            case "speed":
+                // Plays the video on screen at `rate=`, as the 播放速度 menu does.
+                guard let rate = parameters["rate"].flatMap(Float.init) else { return }
+                SpeedChangerPlugin.current?.select(PlaySpeed.blDefaults.first { $0.value == rate } ?? PlaySpeed(name: "\(rate)X", value: rate))
             case "play":
                 var info: [String: Int] = [:]
                 for key in ["aid", "cid", "epid"] {
