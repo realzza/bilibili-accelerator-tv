@@ -28,10 +28,18 @@ class SpeedChangerPlugin: NSObject, CommonPlayerPlugin {
         }
     }
 
+    #if DEBUG
+        /// The plugin of the latest player, for the debug server's `speed` command.
+        weak static var current: SpeedChangerPlugin?
+    #endif
+
     func playerDidLoad(playerVC: AVPlayerViewController) {
         self.playerVC = playerVC
 
         currentPlaySpeed = Settings.mediaPlayerSpeed
+        #if DEBUG
+            Self.current = self
+        #endif
     }
 
     func playerDidChange(player: AVPlayer) {
@@ -39,7 +47,20 @@ class SpeedChangerPlugin: NSObject, CommonPlayerPlugin {
     }
 
     func playerWillStart(player: AVPlayer) {
-        playerVC?.selectSpeed(AVPlaybackSpeed(rate: currentPlaySpeed.value, localizedName: currentPlaySpeed.name))
+        apply(currentPlaySpeed, to: player)
+    }
+
+    /// Plays at `speed` from now on.
+    func select(_ speed: PlaySpeed) {
+        apply(speed, to: player)
+        currentPlaySpeed = speed
+    }
+
+    private func apply(_ speed: PlaySpeed, to player: AVPlayer?) {
+        // On tvOS 27, audio sped up with AVPlayer's default time-domain algorithm drifts out of
+        // sync with the video. The spectral one stays in sync and still keeps the pitch.
+        player?.currentItem?.audioTimePitchAlgorithm = .spectral
+        playerVC?.selectSpeed(AVPlaybackSpeed(rate: speed.value, localizedName: speed.name))
     }
 
     func playerDidStart(player: AVPlayer) {
@@ -80,10 +101,7 @@ class SpeedChangerPlugin: NSObject, CommonPlayerPlugin {
         let speedActions = PlaySpeed.blDefaults.map { playSpeed in
             UIAction(title: playSpeed.name, state: currentPlaySpeed == playSpeed ? .on : .off) {
                 [weak self] _ in
-                guard let self else { return }
-                player?.currentItem?.audioTimePitchAlgorithm = .timeDomain
-                playerVC?.selectSpeed(AVPlaybackSpeed(rate: playSpeed.value, localizedName: playSpeed.name))
-                currentPlaySpeed = playSpeed
+                self?.select(playSpeed)
             }
         }
         let playSpeedMenu = UIMenu(title: "播放速度", options: [.displayInline, .singleSelection], children: speedActions)
