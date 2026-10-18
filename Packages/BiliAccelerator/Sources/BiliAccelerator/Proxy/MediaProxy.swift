@@ -90,9 +90,11 @@ final class MediaProxy {
                            currentMbps: recorder.currentVideoMbps(),
                            sustainedMbps: session.estimate(host).map { $0 / 1_000_000 },
                            recentMbps: session.recentMbps,
+                           sampleCount: session.sampleCount,
                            bufferSeconds: bufferAhead,
                            requiredMbps: required > 0 ? Double(required) / 1_000_000 : nil,
                            isStalled: player?.timeControl == "waiting",
+                           isPlaying: player?.timeControl == "playing",
                            test: session.testPending ? .pending : session.lastTest)
     }
 
