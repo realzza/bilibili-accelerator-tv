@@ -97,8 +97,13 @@ final class VideoPlayerRouteInfoViewController: UIViewController {
         let speedStack = UIStackView(arrangedSubviews: [speedTop, chart, speedFoot])
         speedStack.axis = .vertical
         speedStack.spacing = 10
+        // The info panel gives the tab more height than the card's content needs. The chart takes
+        // it, instead of a gap opening under the speed.
         chart.snp.makeConstraints { make in
-            make.height.equalTo(96)
+            make.height.greaterThanOrEqualTo(96)
+        }
+        speedTop.snp.makeConstraints { make in
+            make.height.equalTo(speedValueLabel).priority(.high)
         }
         let speedCard = UIView()
         speedCard.backgroundColor = UIColor(white: 1, alpha: 0.07)
@@ -773,12 +778,15 @@ private final class SpeedChartView: UIView {
         return out
     }
 
-    /// Rounds up to 1, 2 or 5 times a power of ten.
+    /// Rounds up to 1, 1.2, 1.5, 2, 2.5, 3, 4, 5, 6 or 8 times a power of ten. The userscript
+    /// rounds to 1, 2 or 5, which on a chart this tall left up to half of it empty above the line:
+    /// a 55 Mbps peak made the top 100. With these steps the highest sample fills at least three
+    /// quarters of the height, and the axis still moves only when the data crosses a step.
     private static func niceCeil(_ value: Double) -> Double {
         guard value > 0 else { return 1 }
         let power = pow(10, floor(log10(value)))
         let n = value / power
-        let step: Double = n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10
+        let step = [1, 1.2, 1.5, 2, 2.5, 3, 4, 5, 6, 8].first { n <= $0 * (1 + 1e-9) } ?? 10
         return step * power
     }
 
