@@ -82,8 +82,11 @@ final class RoutingSession {
     /// A test from the panel waits for the next video request.
     private(set) var testPending = false
     private(set) var lastTest: RouteStatus.Test = .none
-    /// The download speed once a second while this video plays, in Mbps, oldest first.
+    /// The download speed once a second while this video plays, in Mbps, oldest first: the last
+    /// 31 samples, one more than the route panel's chart shows.
     private(set) var recentMbps: [Double] = []
+    /// Samples taken so far, including those dropped from `recentMbps`.
+    private(set) var sampleCount = 0
     var random: () -> Double = { Double.random(in: 0..<1) }
 
     init(key: String) {
@@ -133,9 +136,10 @@ final class RoutingSession {
     }
 
     func noteRateSample(_ mbps: Double) {
+        sampleCount += 1
         recentMbps.append(mbps)
-        if recentMbps.count > 30 {
-            recentMbps.removeFirst(recentMbps.count - 30)
+        if recentMbps.count > 31 {
+            recentMbps.removeFirst(recentMbps.count - 31)
         }
     }
 

@@ -23,14 +23,20 @@ public struct RouteStatus: Equatable {
     public let currentMbps: Double?
     /// What routing believes the current host sustains, in Mbps. It moves slowly on purpose.
     public let sustainedMbps: Double?
-    /// The download speed once a second for the last 30 seconds, oldest first, in Mbps.
+    /// The download speed once a second for the last 31 seconds, oldest first, in Mbps. A chart
+    /// of 30 seconds slides the oldest out on the left while the newest comes in on the right.
     public let recentMbps: [Double]
+    /// Speed samples taken on this video so far, so a chart can tell a new sample from the same
+    /// history read twice.
+    public let sampleCount: Int
     /// Seconds buffered ahead of the playhead.
     public let bufferSeconds: Double?
     /// Bitrate of the video being played, in Mbps.
     public let requiredMbps: Double?
     /// The player is waiting for data.
     public let isStalled: Bool
+    /// The player is playing, neither paused nor waiting for data.
+    public let isPlaying: Bool
     public let test: Test
 
     /// Overseas edges, Akamai included, as opposed to mainland mirrors and caches.

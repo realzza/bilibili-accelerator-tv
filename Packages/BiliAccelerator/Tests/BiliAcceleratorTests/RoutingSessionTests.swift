@@ -137,14 +137,15 @@ final class RoutingSessionTests: XCTestCase {
         XCTAssertEqual(session.lastTest, .none)
     }
 
-    func testRateHistoryKeepsTheLastThirtySamples() {
+    func testRateHistoryKeepsTheLastThirtyOneSamples() {
         let session = session()
         for mbps in 1...40 {
             session.noteRateSample(Double(mbps))
         }
-        XCTAssertEqual(session.recentMbps.count, 30)
-        XCTAssertEqual(session.recentMbps.first, 11)
+        XCTAssertEqual(session.recentMbps.count, 31)
+        XCTAssertEqual(session.recentMbps.first, 10)
         XCTAssertEqual(session.recentMbps.last, 40)
+        XCTAssertEqual(session.sampleCount, 40)
     }
 
     func testCurrentSpeedIsTheLatestMegabyteOfVideo() {
