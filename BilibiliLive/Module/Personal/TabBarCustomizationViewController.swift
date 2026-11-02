@@ -82,7 +82,8 @@ class TabBarCustomizationViewController: UIViewController {
 
         let section = NSCollectionLayoutSection(group: group)
         section.orthogonalScrollingBehavior = .continuous
-        section.interGroupSpacing = 30
+        // Eight tiles, the default tab bar, fit between the screen's safe margins.
+        section.interGroupSpacing = 22
         section.contentInsets = NSDirectionalEdgeInsets(top: 20, leading: 0, bottom: 30, trailing: 40)
 
         let headerSize = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1.0),

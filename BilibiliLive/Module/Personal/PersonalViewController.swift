@@ -69,7 +69,7 @@ class PersonalViewController: UIViewController, BLTabBarContentVCProtocol {
     private let vipLabel: PillLabel = {
         let label = PillLabel()
         label.insets = UIEdgeInsets(top: 3, left: 12, bottom: 3, right: 12)
-        label.font = .systemFont(ofSize: 18, weight: .bold)
+        label.font = .systemFont(ofSize: 20, weight: .bold)
         label.textColor = Theme.onAccent
         label.backgroundColor = Theme.accent
         label.layer.cornerRadius = 10
@@ -172,8 +172,9 @@ class PersonalViewController: UIViewController, BLTabBarContentVCProtocol {
     }
 
     func actionLogout() {
-        let alert = UIAlertController(title: "确定登出？", message: nil, preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: "确定", style: .default) {
+        let name = AccountManager.shared.activeAccount?.profile.username
+        let alert = UIAlertController(title: "确定登出？", message: name.map { "将退出账号「\($0)」" }, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "登出", style: .destructive) {
             _ in
             WebRequest.logout {
                 ApiRequest.logout { hasRemainingAccount in
