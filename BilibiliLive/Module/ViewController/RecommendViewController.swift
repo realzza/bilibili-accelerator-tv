@@ -37,6 +37,9 @@ final class RecommendViewController: UIViewController, BLTabBarContentVCProtocol
         next.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         view.addSubview(next.view)
         next.didMove(toParent: self)
+        // The tab bar only follows the scroll view of the tab's own controller. Without this it
+        // stays up as the feed scrolls, with the featured video's title sliding under it.
+        setContentScrollView(next.contentScrollView(for: .top))
 
         contentViewController = next
         activeMode = usesFeedFlow

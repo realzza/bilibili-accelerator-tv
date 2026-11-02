@@ -13,11 +13,11 @@ import UIKit
 final class HeroHeaderView: UICollectionReusableView {
     /// Short enough that the first row of cards, with its titles, fits on the first screen.
     static let height: CGFloat = 600
-    /// What 继续观看 adds below the featured video.
-    private static let shelfExtra: CGFloat = ContinueWatchingShelfView.height + 48
+    /// With 继续观看, tight enough that the first row's thumbnails still fit on the first screen.
+    private static let heightWithShelf: CGFloat = 684
 
     static func height(showingShelf: Bool) -> CGFloat {
-        showingShelf ? height + shelfExtra : height
+        showingShelf ? heightWithShelf : height
     }
 
     var onPlay: (() -> Void)?
@@ -35,10 +35,15 @@ final class HeroHeaderView: UICollectionReusableView {
     private let metaLabel = UILabel()
     private let descriptionLabel = UILabel()
     private let sectionLabel = UILabel()
+    private let buttonRow = UIStackView()
+    /// Above the buttons, so coming down from the tab bar lands on 播放, not on whichever button
+    /// happens to be under the tab. Off while a button has focus, so 上 can leave for the tab bar.
+    private let entryGuide = UIFocusGuide()
     let shelf = ContinueWatchingShelfView()
     private var heightConstraint: Constraint?
     private var shelfHeightConstraint: Constraint?
     private var shelfBottomConstraint: Constraint?
+    private var stackBottomConstraint: Constraint?
 
     var isInWatchLater = false {
         didSet { watchLaterButton.setNeedsUpdateConfiguration() }
@@ -59,9 +64,10 @@ final class HeroHeaderView: UICollectionReusableView {
             heightConstraint = make.height.equalTo(HeroHeaderView.height).priority(.high).constraint
         }
 
+        backdrop.fadesTop = true
         addSubview(backdrop)
 
-        kickerLabel.font = .systemFont(ofSize: 22, weight: .semibold)
+        kickerLabel.font = .systemFont(ofSize: 24, weight: .semibold)
         kickerLabel.textColor = Theme.accent
 
         titleLabel.font = .systemFont(ofSize: 60, weight: .bold)
@@ -82,11 +88,13 @@ final class HeroHeaderView: UICollectionReusableView {
             button.configuration?.title = added ? "已加入稍后再看" : "稍后再看"
             button.configuration?.image = UIImage(systemName: added ? "checkmark" : "clock")
         }
-        let buttons = UIStackView(arrangedSubviews: [playButton, watchLaterButton, detailButton, upButton])
-        buttons.axis = .horizontal
-        buttons.spacing = 20
+        for button in [playButton, watchLaterButton, detailButton, upButton] {
+            buttonRow.addArrangedSubview(button)
+        }
+        buttonRow.axis = .horizontal
+        buttonRow.spacing = 20
 
-        let stack = UIStackView(arrangedSubviews: [kickerLabel, titleLabel, metaLabel, descriptionLabel, buttons])
+        let stack = UIStackView(arrangedSubviews: [kickerLabel, titleLabel, metaLabel, descriptionLabel, buttonRow])
         stack.axis = .vertical
         stack.alignment = .leading
         stack.spacing = 18
@@ -103,7 +111,7 @@ final class HeroHeaderView: UICollectionReusableView {
         let inset = Settings.displayStyle.itemInset
         sectionLabel.snp.makeConstraints { make in
             make.leading.equalToSuperview().offset(inset)
-            make.bottom.equalToSuperview().offset(-8)
+            make.bottom.equalToSuperview().offset(-TitleSupplementaryView.bottomGap)
         }
         addSubview(shelf)
         shelf.isHidden = true
@@ -115,8 +123,22 @@ final class HeroHeaderView: UICollectionReusableView {
         stack.snp.makeConstraints { make in
             make.leading.equalToSuperview().offset(inset)
             make.width.lessThanOrEqualTo(960)
-            make.bottom.equalTo(shelf.snp.top).offset(-96)
+            stackBottomConstraint = make.bottom.equalTo(shelf.snp.top).offset(-96).constraint
         }
+
+        addLayoutGuide(entryGuide)
+        entryGuide.preferredFocusEnvironments = [playButton]
+        NSLayoutConstraint.activate([
+            entryGuide.leadingAnchor.constraint(equalTo: leadingAnchor),
+            entryGuide.trailingAnchor.constraint(equalTo: trailingAnchor),
+            entryGuide.topAnchor.constraint(equalTo: stack.topAnchor),
+            entryGuide.bottomAnchor.constraint(equalTo: buttonRow.topAnchor),
+        ])
+    }
+
+    override func didUpdateFocus(in context: UIFocusUpdateContext, with coordinator: UIFocusAnimationCoordinator) {
+        super.didUpdateFocus(in: context, with: coordinator)
+        entryGuide.isEnabled = !(context.nextFocusedView?.isDescendant(of: buttonRow) ?? false)
     }
 
     /// Shows 继续观看 with `items`, or hides it when there are none. Returns whether the
@@ -128,7 +150,8 @@ final class HeroHeaderView: UICollectionReusableView {
         let changed = shelf.isHidden == show
         shelf.isHidden = !show
         shelfHeightConstraint?.update(offset: show ? ContinueWatchingShelfView.height : 0)
-        shelfBottomConstraint?.update(offset: show ? -48 : 0)
+        shelfBottomConstraint?.update(offset: show ? -20 : 0)
+        stackBottomConstraint?.update(offset: show ? -40 : -96)
         heightConstraint?.update(offset: Self.height(showingShelf: show))
         return changed
     }
@@ -144,8 +167,8 @@ final class HeroHeaderView: UICollectionReusableView {
             right = max(0, collectionView.bounds.maxX - frame.maxX)
         }
         let left = bounds.width * 0.26
-        // The art ends a little below the actions, above 继续观看 when it shows.
-        let bottom = shelf.isHidden ? bounds.height : shelf.frame.minY + 40
+        // The art fades out under the actions, or under 继续观看 when it shows, keeping its size.
+        let bottom = shelf.isHidden ? bounds.height : shelf.frame.maxY
         backdrop.frame = CGRect(x: left, y: -top, width: bounds.width - left + right, height: bottom + top)
     }
 
@@ -157,8 +180,13 @@ final class HeroHeaderView: UICollectionReusableView {
         metaLabel.text = meta
         let description = description?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         descriptionLabel.text = description
+        let wasHidden = descriptionLabel.isHidden
         // Many uploaders repeat the title as the description.
         descriptionLabel.isHidden = description.isEmpty || description == "-" || description == title
+        // It loads a moment after the rest, so ease the text up instead of jumping.
+        if wasHidden != descriptionLabel.isHidden, window != nil {
+            UIView.animate(withDuration: 0.25) { self.layoutIfNeeded() }
+        }
         upButton.isHidden = !hasUpSpace
         if var cover {
             if cover.scheme == nil {
