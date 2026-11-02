@@ -262,7 +262,7 @@ class FeedCollectionViewController: UIViewController {
             repeatingSubitem: item,
             count: style.feedColCount
         )
-        let vSpacing: CGFloat = style == .large ? 24 : 16
+        let vSpacing: CGFloat = style == .large ? 28 : 22
         let baseSpacing: CGFloat = style == .sideBar ? 24 : 0
         group.edgeSpacing = NSCollectionLayoutEdgeSpacing(leading: .fixed(baseSpacing), top: .fixed(vSpacing), trailing: .fixed(0), bottom: .fixed(vSpacing))
         let section = NSCollectionLayoutSection(group: group)
@@ -315,6 +315,7 @@ class FeedCollectionViewController: UIViewController {
     private func makeCellRegistration() -> DisplayCellRegistration {
         DisplayCellRegistration { [weak self] cell, indexPath, displayData in
             cell.styleOverride = self?.styleOverride
+            cell.maxTitleLines = 2
             cell.setup(data: displayData.data)
             if self?.showsRank == true {
                 cell.setRank(indexPath.item + 1)

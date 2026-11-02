@@ -5,28 +5,44 @@
 //  Created by yicheng on 2022/10/20.
 //
 
+import CoreText
 import Kingfisher
 import MarqueeLabel
+import SnapKit
 import TVUIKit
 import UIKit
 
 /// A video card: a 16:9 thumbnail with the view count bottom left, the duration bottom right and
-/// who may watch (such as 充电专属) top right, a one-line title that scrolls when focused, and one
-/// line of metadata below.
+/// who may watch (such as 充电专属) top right, a title of up to `maxTitleLines` lines whose last line
+/// scrolls when focused, and one line of metadata below.
 class FeedCollectionViewCell: BLMotionCollectionViewCell {
     var onLongPress: (() -> Void)?
     var styleOverride: FeedDisplayStyle? { didSet { if oldValue != styleOverride { updateStyle() } }}
+    /// How many lines the title may take. Lists whose cards size themselves to their content can
+    /// use two; a card of fixed height keeps one.
+    var maxTitleLines = 1
+    /// Smaller text and spacing, for rows of fixed height, such as on the video page.
+    var isCompact = false {
+        didSet { if oldValue != isCompact { updateStyle() } }
+    }
 
+    /// The title's first line when it has two. Its last line is `titleLabel`, so all of a long
+    /// title can still be read by focusing the card.
+    private let firstLineLabel = UILabel()
     private let titleLabel = MarqueeLabel()
     private let metaLabel = UILabel()
     private let artwork = UIView()
     private let imageView = UIImageView()
+    private let scrim = CardScrimView()
+    private let focusRing = UIView()
     private let durationLabel = PillLabel()
     private let viewsLabel = PillLabel()
     private let badgeLabel = PillLabel()
     private let accessTag = AccessTagView(font: FeedCollectionViewCell.pillFont, fill: Theme.badgeFill, cornerRadius: 10)
     private let progressTrack = UIView()
     private let progressFill = UIView()
+    private let textStack = UIStackView()
+    private var textTopConstraint: Constraint?
 
     /// How much of the video was watched, 0 to 1, drawn along the bottom of the thumbnail in
     /// place of the view count and duration. Nil hides it.
@@ -58,6 +74,11 @@ class FeedCollectionViewCell: BLMotionCollectionViewCell {
         imageView.clipsToBounds = true
         imageView.contentMode = .scaleAspectFill
         imageView.backgroundColor = UIColor(white: 1, alpha: 0.06)
+
+        artwork.addSubview(scrim)
+        scrim.snp.makeConstraints { make in
+            make.edges.equalToSuperview()
+        }
 
         for pill in [durationLabel, viewsLabel] {
             artwork.addSubview(pill)
@@ -91,7 +112,7 @@ class FeedCollectionViewCell: BLMotionCollectionViewCell {
         badgeLabel.snp.makeConstraints { make in
             make.leading.top.equalToSuperview().inset(12)
         }
-        badgeLabel.font = .systemFont(ofSize: 18, weight: .bold)
+        badgeLabel.font = .systemFont(ofSize: 20, weight: .bold)
         badgeLabel.textColor = Theme.onAccent
         badgeLabel.layer.cornerRadius = 10
         badgeLabel.clipsToBounds = true
@@ -102,16 +123,34 @@ class FeedCollectionViewCell: BLMotionCollectionViewCell {
             make.leading.greaterThanOrEqualTo(badgeLabel.snp.trailing).offset(8)
         }
 
-        let stackView = UIStackView(arrangedSubviews: [titleLabel, metaLabel])
-        stackView.axis = .vertical
-        stackView.alignment = .fill
-        stackView.spacing = 6
-        contentView.addSubview(stackView)
-        stackView.snp.makeConstraints { make in
-            make.top.equalTo(artwork.snp.bottom).offset(14)
-            make.leading.trailing.equalToSuperview()
-            make.bottom.equalToSuperview().priority(.high)
+        // Just outside the thumbnail, on top of everything on it. The usual dark shadow doesn't
+        // show on the dark ground, so this is what marks the focused card from across the room.
+        artwork.addSubview(focusRing)
+        focusRing.snp.makeConstraints { make in
+            make.edges.equalToSuperview().inset(-3)
         }
+        focusRing.isUserInteractionEnabled = false
+        focusRing.alpha = 0
+        focusRing.layer.borderColor = Theme.textPrimary.cgColor
+        focusRing.layer.borderWidth = 3
+        focusRing.layer.cornerRadius = Theme.cardRadius + 3
+        focusRing.layer.cornerCurve = .continuous
+
+        [firstLineLabel, titleLabel, metaLabel].forEach(textStack.addArrangedSubview)
+        textStack.axis = .vertical
+        textStack.alignment = .fill
+        textStack.setCustomSpacing(4, after: firstLineLabel)
+        contentView.addSubview(textStack)
+        // Held to the top, so a one-line title in a taller card sits right under the thumbnail.
+        textStack.snp.makeConstraints { make in
+            textTopConstraint = make.top.equalTo(artwork.snp.bottom).offset(20).constraint
+            make.leading.trailing.equalToSuperview()
+            make.bottom.lessThanOrEqualToSuperview().priority(.high)
+        }
+        firstLineLabel.textColor = Theme.textPrimary
+        firstLineLabel.lineBreakMode = .byClipping
+        firstLineLabel.isHidden = true
+        firstLineLabel.setContentCompressionResistancePriority(.required, for: .vertical)
         titleLabel.textColor = Theme.textPrimary
         titleLabel.holdScrolling = true
         titleLabel.fadeLength = 40
@@ -122,7 +161,7 @@ class FeedCollectionViewCell: BLMotionCollectionViewCell {
     }
 
     func setup(data: any DisplayData) {
-        titleLabel.text = data.title
+        title = data.title
         metaLabel.text = Self.metaText(for: data)
         let facts = CardFacts(overlay: data.overlay)
         durationLabel.text = facts.duration
@@ -136,13 +175,71 @@ class FeedCollectionViewCell: BLMotionCollectionViewCell {
             setBadge(nil)
         }
         accessTag.text = data.accessTag
+        scrim.isHidden = durationLabel.isHidden && viewsLabel.isHidden && progressTrack.isHidden
         if var pic = data.pic {
             if pic.scheme == nil {
                 pic = URL(string: "http:\(pic.absoluteString)")!
             }
-            imageView.kf.setImage(with: pic, options: [.processor(DownsamplingImageProcessor(size: CGSize(width: 480, height: 270))), .cacheOriginalImage])
+            imageView.kf.setImage(with: pic, options: [.processor(DownsamplingImageProcessor(size: CGSize(width: 480, height: 270))),
+                                                       .cacheOriginalImage,
+                                                       .transition(.fade(0.2))])
         }
         updateStyle()
+    }
+
+    private var title = "" {
+        didSet { splitTitle(width: contentView.bounds.width, force: true) }
+    }
+
+    private var splitWidth: CGFloat = 0
+    private static let shortestSecondLine = 4
+
+    /// Fills the title's lines for a card this wide, so the cell can size itself to them.
+    private func splitTitle(width: CGFloat, force: Bool = false) {
+        guard force || width != splitWidth else { return }
+        splitWidth = width
+        var firstLine = ""
+        var rest = title
+        if maxTitleLines > 1, width > 0, let font = titleLabel.font {
+            let typesetter = CTTypesetterCreateWithAttributedString(NSAttributedString(string: title, attributes: [.font: font]))
+            let text = title as NSString
+            var length = CTTypesetterSuggestLineBreak(typesetter, 0, Double(width))
+            // Don't leave a character or two alone on the second line.
+            if length < text.length, text.length - length < Self.shortestSecondLine, length > Self.shortestSecondLine {
+                length = text.rangeOfComposedCharacterSequence(at: text.length - Self.shortestSecondLine).location
+            }
+            firstLine = text.substring(to: length)
+            rest = text.substring(from: length).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        firstLineLabel.text = firstLine
+        firstLineLabel.isHidden = firstLine.isEmpty
+        titleLabel.text = rest
+        titleLabel.isHidden = rest.isEmpty
+    }
+
+    override func preferredLayoutAttributesFitting(_ layoutAttributes: UICollectionViewLayoutAttributes) -> UICollectionViewLayoutAttributes {
+        splitTitle(width: layoutAttributes.size.width)
+        return super.preferredLayoutAttributesFitting(layoutAttributes)
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        splitTitle(width: contentView.bounds.width)
+    }
+
+    /// Only the thumbnail, with corners and a progress bar to match its smaller size, for a strip
+    /// of small cards.
+    func showThumbnailOnly() {
+        textStack.isHidden = true
+        scaleFactor = 1.1
+        imageView.layer.cornerRadius = 12
+        scrim.layer.cornerRadius = 12
+        focusRing.layer.cornerRadius = 15
+        progressTrack.snp.remakeConstraints { make in
+            make.leading.trailing.bottom.equalToSuperview().inset(10)
+            make.height.equalTo(5)
+        }
+        progressTrack.layer.cornerRadius = 2.5
     }
 
     private static let pillFont = UIFont.systemFont(ofSize: 20, weight: .semibold)
@@ -150,7 +247,7 @@ class FeedCollectionViewCell: BLMotionCollectionViewCell {
     /// A label at the top left of the thumbnail, such as 直播中 or 正在看; nil hides it.
     func setBadge(_ text: String?, color: UIColor = Theme.accent) {
         badgeLabel.text = text
-        badgeLabel.font = .systemFont(ofSize: 18, weight: .bold)
+        badgeLabel.font = .systemFont(ofSize: 20, weight: .bold)
         badgeLabel.insets = UIEdgeInsets(top: 4, left: 10, bottom: 4, right: 10)
         badgeLabel.backgroundColor = color
         badgeLabel.textColor = Theme.onAccent
@@ -226,6 +323,12 @@ class FeedCollectionViewCell: BLMotionCollectionViewCell {
         }
     }
 
+    override func updateTransform() {
+        super.updateTransform()
+        focusRing.alpha = isFocused ? 1 : 0
+        metaLabel.textColor = isFocused ? Theme.textSecondary : Theme.textTertiary
+    }
+
     private func startScroll() {
         titleLabel.restartLabel()
         titleLabel.holdScrolling = false
@@ -238,8 +341,14 @@ class FeedCollectionViewCell: BLMotionCollectionViewCell {
 
     private func updateStyle() {
         let style = styleOverride ?? Settings.displayStyle
-        titleLabel.font = style.titleFont
-        metaLabel.font = style.upFont
+        let titleFont = isCompact ? .systemFont(ofSize: 24, weight: .semibold) : style.titleFont
+        firstLineLabel.font = titleFont
+        titleLabel.font = titleFont
+        metaLabel.font = isCompact ? .systemFont(ofSize: 21) : style.upFont
+        // Enough air between the thumbnail and its text that they don't read as crowded.
+        textTopConstraint?.update(offset: isCompact ? 16 : 20)
+        textStack.spacing = isCompact ? 6 : 8
+        splitTitle(width: contentView.bounds.width, force: true)
     }
 
     @objc private func actionLongPress(sender: UILongPressGestureRecognizer) {
@@ -255,6 +364,7 @@ class FeedCollectionViewCell: BLMotionCollectionViewCell {
         progressTrack.isHidden = false
         durationLabel.isHidden = true
         viewsLabel.isHidden = true
+        scrim.isHidden = false
         progressFill.snp.remakeConstraints { make in
             make.leading.top.bottom.equalToSuperview()
             make.width.equalToSuperview().multipliedBy(min(max(progress, 0.02), 1))
@@ -305,22 +415,42 @@ extension FeedDisplayStyle {
         switch self {
         case .large:
             return .systemFont(ofSize: 32, weight: .semibold)
-        case .normal:
+        case .normal, .sideBar:
             return .systemFont(ofSize: 28, weight: .semibold)
-        case .sideBar:
-            return .systemFont(ofSize: 24, weight: .semibold)
         }
     }
 
     var upFont: UIFont {
         switch self {
         case .large:
-            return .systemFont(ofSize: 24)
-        case .normal:
-            return .systemFont(ofSize: 22)
-        case .sideBar:
-            return .systemFont(ofSize: 20)
+            return .systemFont(ofSize: 25)
+        case .normal, .sideBar:
+            return .systemFont(ofSize: 23)
         }
+    }
+}
+
+/// Darkens the bottom of a thumbnail, so what sits on it stays readable over any cover: Bilibili
+/// covers usually carry big text of their own right where the pills go.
+private final class CardScrimView: UIView {
+    override class var layerClass: AnyClass {
+        CAGradientLayer.self
+    }
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        isUserInteractionEnabled = false
+        clipsToBounds = true
+        layer.cornerRadius = Theme.cardRadius
+        layer.cornerCurve = .continuous
+        guard let gradient = layer as? CAGradientLayer else { return }
+        gradient.colors = [Theme.background.withAlphaComponent(0).cgColor, Theme.background.withAlphaComponent(0.72).cgColor]
+        gradient.locations = [0.55, 1]
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
     }
 }
 
