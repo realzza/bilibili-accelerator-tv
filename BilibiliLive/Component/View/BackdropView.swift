@@ -10,6 +10,12 @@ final class BackdropView: UIView {
     let imageView = UIImageView()
     private let sideScrim = CAGradientLayer()
     private let bottomScrim = CAGradientLayer()
+    private let topScrim = CAGradientLayer()
+
+    /// Fades the top edge too, for art that runs under the tab bar.
+    var fadesTop = false {
+        didSet { topScrim.isHidden = !fadesTop }
+    }
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -29,6 +35,10 @@ final class BackdropView: UIView {
         bottomScrim.colors = [Theme.background.withAlphaComponent(0).cgColor, Theme.background.cgColor]
         bottomScrim.locations = [0.55, 1]
         layer.addSublayer(bottomScrim)
+        topScrim.colors = [Theme.background.withAlphaComponent(0.78).cgColor, Theme.background.withAlphaComponent(0).cgColor]
+        topScrim.locations = [0, 0.32]
+        topScrim.isHidden = true
+        layer.addSublayer(topScrim)
     }
 
     @available(*, unavailable)
@@ -43,6 +53,7 @@ final class BackdropView: UIView {
         CATransaction.setDisableActions(true)
         sideScrim.frame = bounds
         bottomScrim.frame = bounds
+        topScrim.frame = bounds
         CATransaction.commit()
     }
 }

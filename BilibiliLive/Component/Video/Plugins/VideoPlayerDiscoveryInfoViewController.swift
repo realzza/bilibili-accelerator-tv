@@ -147,6 +147,7 @@ extension VideoPlayerDiscoveryInfoViewController: UICollectionViewDataSource, UI
         let cell = collectionView.dequeueReusableCell(withReuseIdentifier: String(describing: FeedCollectionViewCell.self),
                                                       for: indexPath) as! FeedCollectionViewCell
         cell.styleOverride = .sideBar
+        cell.isCompact = true
         cell.setup(data: entry.displayData.data)
         return cell
     }

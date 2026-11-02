@@ -42,20 +42,27 @@ struct ContinueWatchingItem: DisplayData {
     }
 }
 
-/// 继续观看: a titled row of cards with how far each video got, scrolling sideways.
+/// 继续观看: a slim strip of thumbnails with how far each video got, after a title that scrolls away
+/// with them. They carry no text, which keeps the strip small enough to leave the recommendations
+/// on the first screen; the line under the strip names the focused video.
 final class ContinueWatchingShelfView: UIView {
-    static let height: CGFloat = 360
+    private static let cardSize = CGSize(width: 176, height: 99)
+    private static let captionHeight: CGFloat = 38
+    /// The strip and the line under it.
+    static let height: CGFloat = cardSize.height + captionHeight
 
     var onSelect: ((ContinueWatchingItem) -> Void)?
 
-    private let titleLabel = UILabel()
+    private let captionLabel = UILabel()
     private let collectionView: UICollectionView
     private var items = [ContinueWatchingItem]()
 
     override init(frame: CGRect) {
         let layout = UICollectionViewFlowLayout()
         layout.scrollDirection = .horizontal
-        layout.minimumLineSpacing = 60
+        layout.minimumLineSpacing = 24
+        layout.itemSize = Self.cardSize
+        layout.headerReferenceSize = CGSize(width: ShelfTitleView.width, height: Self.cardSize.height)
         collectionView = UICollectionView(frame: .zero, collectionViewLayout: layout)
         super.init(frame: frame)
         setup()
@@ -77,39 +84,42 @@ final class ContinueWatchingShelfView: UIView {
 
     private func setup() {
         let inset = Settings.displayStyle.itemInset
-        titleLabel.text = "继续观看"
-        titleLabel.font = .systemFont(ofSize: 30, weight: .semibold)
-        titleLabel.textColor = Theme.textPrimary
-        addSubview(titleLabel)
-        titleLabel.snp.makeConstraints { make in
-            make.top.equalToSuperview()
-            make.leading.equalToSuperview().offset(inset)
-        }
-
         collectionView.backgroundColor = .clear
         collectionView.clipsToBounds = false
         collectionView.showsHorizontalScrollIndicator = false
         collectionView.contentInset = UIEdgeInsets(top: 0, left: inset, bottom: 0, right: inset)
         collectionView.register(FeedCollectionViewCell.self, forCellWithReuseIdentifier: "cell")
+        collectionView.register(ShelfTitleView.self,
+                                forSupplementaryViewOfKind: UICollectionView.elementKindSectionHeader,
+                                withReuseIdentifier: "title")
         collectionView.dataSource = self
         collectionView.delegate = self
         addSubview(collectionView)
         collectionView.snp.makeConstraints { make in
-            make.top.equalTo(titleLabel.snp.bottom).offset(24)
-            make.leading.trailing.bottom.equalToSuperview()
+            make.top.leading.trailing.equalToSuperview()
+            make.height.equalTo(Self.cardSize.height)
+        }
+
+        captionLabel.alpha = 0
+        captionLabel.lineBreakMode = .byTruncatingTail
+        addSubview(captionLabel)
+        captionLabel.snp.makeConstraints { make in
+            make.top.equalTo(collectionView.snp.bottom).offset(10)
+            // Under the thumbnails it describes, apart from the section title below.
+            make.leading.equalToSuperview().offset(inset + ShelfTitleView.width)
+            make.trailing.lessThanOrEqualToSuperview().offset(-inset)
         }
     }
 
-    override func layoutSubviews() {
-        super.layoutSubviews()
-        // The same width as a card in the grid below, so the two line up.
-        guard let layout = collectionView.collectionViewLayout as? UICollectionViewFlowLayout else { return }
-        let style = Settings.displayStyle
-        let width = bounds.width * style.fractionalWidth - style.itemInset * 2
-        let size = CGSize(width: width.rounded(), height: collectionView.bounds.height)
-        if layout.itemSize != size, size.width > 0, size.height > 0 {
-            layout.itemSize = size
+    /// `Tom Dwan 在 KPC 上到底怎么了 · chang_poker · 还剩 2 分钟`, the title brightest.
+    private func caption(for item: ContinueWatchingItem) -> NSAttributedString {
+        let font = UIFont.systemFont(ofSize: 24, weight: .medium)
+        let text = NSMutableAttributedString(string: item.title, attributes: [.font: font, .foregroundColor: Theme.textPrimary])
+        let details = [item.ownerName, item.date].compactMap { $0 }.filter { !$0.isEmpty }
+        for detail in details {
+            text.append(NSAttributedString(string: " · \(detail)", attributes: [.font: font, .foregroundColor: Theme.textTertiary]))
         }
+        return text
     }
 }
 
@@ -122,10 +132,47 @@ extension ContinueWatchingShelfView: UICollectionViewDataSource, UICollectionVie
         let cell = collectionView.dequeueReusableCell(withReuseIdentifier: "cell", for: indexPath) as! FeedCollectionViewCell
         let item = items[indexPath.item]
         cell.setup(data: item)
+        cell.showThumbnailOnly()
         return cell
+    }
+
+    func collectionView(_ collectionView: UICollectionView, viewForSupplementaryElementOfKind kind: String, at indexPath: IndexPath) -> UICollectionReusableView {
+        collectionView.dequeueReusableSupplementaryView(ofKind: kind, withReuseIdentifier: "title", for: indexPath)
     }
 
     func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
         onSelect?(items[indexPath.item])
+    }
+
+    func collectionView(_ collectionView: UICollectionView, didUpdateFocusIn context: UICollectionViewFocusUpdateContext, with coordinator: UIFocusAnimationCoordinator) {
+        let item = context.nextFocusedIndexPath.flatMap { items.indices.contains($0.item) ? items[$0.item] : nil }
+        if let item {
+            captionLabel.attributedText = caption(for: item)
+        }
+        coordinator.addCoordinatedAnimations {
+            self.captionLabel.alpha = item == nil ? 0 : 1
+        }
+    }
+}
+
+/// 继续观看 at the start of the strip.
+private final class ShelfTitleView: UICollectionReusableView {
+    static let width: CGFloat = 132
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        let label = UILabel()
+        label.text = "继续观看"
+        label.font = .systemFont(ofSize: 26, weight: .semibold)
+        label.textColor = Theme.textPrimary
+        addSubview(label)
+        label.snp.makeConstraints { make in
+            make.leading.centerY.equalToSuperview()
+        }
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
     }
 }

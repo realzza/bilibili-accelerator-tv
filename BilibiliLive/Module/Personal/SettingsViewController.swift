@@ -123,24 +123,24 @@ class SettingsViewController: UIViewController {
                     Accelerator.shared.isEnabled = enabled
                 }
                 .with(note: "线路速度不足时，自动切换到更快的线路", accentsOn: true)
-                Actions(title: "最高画质", message: "4k以上需要大会员",
+                Actions(title: "最高画质", message: "4K 以上需要大会员",
                         current: Settings.mediaQuality.desp,
                         options: MediaQualityEnum.allCases,
                         optionString: MediaQualityEnum.allCases.map({ $0.desp }))
                 {
                     Settings.mediaQuality = $0
                 }
-                Actions(title: "默认播放速度", message: "默认设置为1.0",
+                Actions(title: "默认播放速度", message: "默认为 1.0 倍",
                         current: Settings.mediaPlayerSpeed.name,
                         options: PlaySpeed.blDefaults,
                         optionString: PlaySpeed.blDefaults.map({ $0.name }))
                 {
                     Settings.mediaPlayerSpeed = $0
                 }
-                Toggle(title: "Avc优先(卡顿尝试开启)", setting: Settings.preferAvc, onChange: Settings.preferAvc.toggle())
+                Toggle(title: "优先 AVC 编码（卡顿时可尝试开启）", setting: Settings.preferAvc, onChange: Settings.preferAvc.toggle())
                 Toggle(title: "无损音频和杜比全景声", setting: Settings.losslessAudio, onChange: Settings.losslessAudio.toggle())
                 Toggle(title: "匹配视频内容", setting: Settings.contentMatch, onChange: Settings.contentMatch.toggle())
-                Toggle(title: "仅在HDR视频匹配视频内容", setting: Settings.contentMatchOnlyInHDR, onChange: Settings.contentMatchOnlyInHDR.toggle())
+                Toggle(title: "仅在 HDR 视频匹配视频内容", setting: Settings.contentMatchOnlyInHDR, onChange: Settings.contentMatchOnlyInHDR.toggle())
             }
 
             SectionModel(title: "通用") {
@@ -149,21 +149,25 @@ class SettingsViewController: UIViewController {
                     BiliBiliUpnpDMR.shared.start()
                 }
 
-                Toggle(title: "热门个性化推荐", setting: Settings.requestHotWithoutCookie, onChange: Settings.requestHotWithoutCookie.toggle())
+                // The stored flag is the opposite of the label: it requests 热门 without the account's cookie.
+                Toggle(title: "热门个性化推荐", setting: !Settings.requestHotWithoutCookie, onChange: Settings.requestHotWithoutCookie.toggle())
             }
 
             SectionModel(title: "界面") {
-                Navigation(title: "自定义Tab栏", desp: "") { [weak self] in
+                Navigation(title: "自定义标签栏", desp: "›") { [weak self] in
                     let controller = TabBarCustomizationViewController()
                     self?.present(controller, animated: true)
                 }
 
-                Actions(title: "视频每行显示个数", message: "重启app生效",
+                Actions(title: "视频每行显示个数", message: nil,
                         current: Settings.displayStyle.desp,
                         options: FeedDisplayStyle.allCases.filter({ !$0.hideInSetting }),
                         optionString: FeedDisplayStyle.allCases.filter({ !$0.hideInSetting }).map({ $0.desp }))
                 {
+                    guard Settings.displayStyle != $0 else { return }
                     Settings.displayStyle = $0
+                    // The tabs read the style as they load, so build them again to apply it now.
+                    AppDelegate.shared.resetTabBar()
                 }
                 Toggle(title: "侧边栏菜单自动切换", setting: Settings.sideMenuAutoSelectChange, onChange: Settings.sideMenuAutoSelectChange.toggle())
 
@@ -171,7 +175,7 @@ class SettingsViewController: UIViewController {
                        setting: Settings.direatlyEnterVideo,
                        onChange: Settings.direatlyEnterVideo.toggle())
 
-                Actions(title: "视频详情相关推荐加载模式", message: "4k以上需要大会员",
+                Actions(title: "视频详情相关推荐加载模式", message: "在视频详情页选择相关推荐时的打开方式",
                         current: Settings.showRelatedVideoInCurrentVC ? "页面刷新" : "新页面中打开",
                         options: [true, false],
                         optionString: ["页面刷新", "新页面中打开"])
@@ -225,13 +229,13 @@ class SettingsViewController: UIViewController {
                         Task {
                             let toast = await VideoDanmuFilter.shared.update()
                             let alert = UIAlertController(title: "同步结果", message: toast, preferredStyle: .alert)
-                            alert.addAction(.init(title: "Ok", style: .cancel))
+                            alert.addAction(.init(title: "好", style: .cancel))
                             self.present(alert, animated: true)
                         }
                     }
                 }
                 Toggle(title: "移除重复弹幕", setting: Settings.enableDanmuRemoveDup, onChange: Settings.enableDanmuRemoveDup.toggle())
-                Actions(title: "弹幕大小", message: "默认为36", current: Settings.danmuSize.title, options: DanmuSize.allCases, optionString: DanmuSize.allCases.map({ $0.title })) {
+                Actions(title: "弹幕大小", message: "默认为 36", current: Settings.danmuSize.title, options: DanmuSize.allCases, optionString: DanmuSize.allCases.map({ $0.title })) {
                     Settings.danmuSize = $0
                 }
                 Actions(title: "弹幕显示区域", message: "设置弹幕显示区域",
@@ -241,8 +245,8 @@ class SettingsViewController: UIViewController {
                 {
                     Settings.danmuArea = $0
                 }
-                Toggle(title: "智能防档弹幕", setting: Settings.danmuMask, onChange: Settings.danmuMask.toggle())
-                Toggle(title: "按需本地运算智能防档弹幕(Exp)", setting: Settings.vnMask, onChange: Settings.vnMask.toggle())
+                Toggle(title: "智能防挡弹幕", setting: Settings.danmuMask, onChange: Settings.danmuMask.toggle())
+                Toggle(title: "按需本地运算智能防挡弹幕（实验）", setting: Settings.vnMask, onChange: Settings.vnMask.toggle())
 
                 // 添加弹幕透明度设置
                 Actions(title: "弹幕透明度", message: "调整弹幕的透明度",
@@ -312,6 +316,7 @@ extension SettingsViewController {
     {
         return CellModel(title: title, desp: current()) { [weak self] update in
             let alert = UIAlertController(title: title, message: message, preferredStyle: .actionSheet)
+            let selected = current()
 
             for (idx, string) in optionString.enumerated() {
                 let action = UIAlertAction(title: string, style: .default) { _ in
@@ -319,6 +324,10 @@ extension SettingsViewController {
                     update()
                 }
                 alert.addAction(action)
+                // Opens on the current value and keeps it tinted, so it reads as the one chosen.
+                if string == selected {
+                    alert.preferredAction = action
+                }
             }
             let cancelAction = UIAlertAction(title: nil, style: .cancel)
             alert.addAction(cancelAction)
@@ -455,7 +464,9 @@ class SettingsSwitchCell: BLMotionCollectionViewCell {
     }
 
     func updateColor() {
-        let pill = accentsOn && descLabel.text == "开"
+        let isOn = descLabel.text == "开"
+        let isOff = descLabel.text == "关"
+        let pill = accentsOn && isOn
         descLabel.insets = pill ? UIEdgeInsets(top: 4, left: 16, bottom: 4, right: 16) : .zero
         descLabel.font = .systemFont(ofSize: 25, weight: pill ? .bold : .regular)
         descLabel.invalidateIntrinsicContentSize()
@@ -464,12 +475,13 @@ class SettingsSwitchCell: BLMotionCollectionViewCell {
             contentView.backgroundColor = Theme.focusedFill
             titleLabel.textColor = Theme.focusedText
             noteLabel.textColor = Theme.focusedText.withAlphaComponent(0.72)
-            descLabel.textColor = pill ? Theme.onAccent : Theme.focusedText.withAlphaComponent(0.72)
+            descLabel.textColor = pill ? Theme.onAccent : Theme.focusedText.withAlphaComponent(isOff ? 0.5 : (isOn ? 1 : 0.72))
         } else {
             contentView.backgroundColor = .clear
             titleLabel.textColor = Theme.textPrimary
             noteLabel.textColor = Theme.textTertiary
-            descLabel.textColor = pill ? Theme.onAccent : Theme.textSecondary
+            // 开 stands out from 关, so a list of toggles can be read at a glance.
+            descLabel.textColor = pill ? Theme.onAccent : (isOn ? Theme.textPrimary : (isOff ? Theme.textTertiary : Theme.textSecondary))
         }
     }
 }

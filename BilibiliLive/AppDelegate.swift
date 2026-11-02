@@ -21,6 +21,8 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         Logger.setup()
+        // The system tints an alert's preferred action, in blue unless told otherwise.
+        UIView.appearance(whenContainedInInstancesOf: [UIAlertController.self]).tintColor = Theme.accent
         ImageCache.default.diskStorage.config.sizeLimit = 500 * 1024 * 1024
         AVInfoPanelCollectionViewThumbnailCellHook.start()
         AccountManager.shared.bootstrap()

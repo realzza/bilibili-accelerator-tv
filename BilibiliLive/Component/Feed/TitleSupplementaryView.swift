@@ -12,6 +12,8 @@ import UIKit
 class TitleSupplementaryView: UICollectionReusableView {
     let label = UILabel()
     static let reuseIdentifier = "title-supplementary-reuse-identifier"
+    /// Between a title and the cards below: a focused card grows up into this space.
+    static let bottomGap: CGFloat = 20
 
     /// Where the title starts, to line it up with the first card.
     var leadingInset: CGFloat = 20 {
@@ -41,7 +43,7 @@ extension TitleSupplementaryView {
             make.top.equalToSuperview()
             make.leading.equalToSuperview().offset(leadingInset)
             make.trailing.equalToSuperview()
-            make.bottom.equalToSuperview().offset(-8)
+            make.bottom.equalToSuperview().offset(-Self.bottomGap)
         }
         label.font = .systemFont(ofSize: 30, weight: .semibold)
         label.textColor = Theme.textPrimary

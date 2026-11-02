@@ -712,6 +712,7 @@ extension VideoDetailViewController: UICollectionViewDataSource {
             let cell = collectionView.dequeueReusableCell(withReuseIdentifier: String(describing: FeedCollectionViewCell.self), for: indexPath) as! FeedCollectionViewCell
             let record = allUgcEpisodes[indexPath.row]
             cell.styleOverride = .sideBar
+            cell.isCompact = true
             cell.setup(data: record)
             if record.aid == aid {
                 cell.setBadge("正在看")
@@ -721,6 +722,7 @@ extension VideoDetailViewController: UICollectionViewDataSource {
             let cell = collectionView.dequeueReusableCell(withReuseIdentifier: String(describing: FeedCollectionViewCell.self), for: indexPath) as! FeedCollectionViewCell
             if let related = data?.Related[indexPath.row] {
                 cell.styleOverride = .sideBar
+                cell.isCompact = true
                 cell.setup(data: related)
             }
             return cell

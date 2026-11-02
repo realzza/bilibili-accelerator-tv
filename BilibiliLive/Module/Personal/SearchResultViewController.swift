@@ -252,6 +252,7 @@ extension SearchResultViewController {
 
     private func configureDataSource() {
         let displayCell = UICollectionView.CellRegistration<FeedCollectionViewCell, any DisplayData> {
+            $0.maxTitleLines = 2
             $0.setup(data: $2)
         }
         let termCell = UICollectionView.CellRegistration<SearchTermCell, SearchTerm> {
@@ -441,7 +442,10 @@ struct SearchResult: Decodable, Hashable {
             leftItems.append(DisplayOverlay.DisplayOverlayItem(icon: "play.rectangle", text: play == 0 ? "-" : play?.numberString() ?? "-"))
             leftItems.append(DisplayOverlay.DisplayOverlayItem(icon: "list.bullet.rectangle", text: danmaku == 0 ? "-" : danmaku.numberString()))
             if let duration {
-                rightItems.append(DisplayOverlay.DisplayOverlayItem(icon: nil, text: duration))
+                // Search writes 3:01 as `3:1`.
+                let parts = duration.split(separator: ":").map { $0.count == 1 ? "0\($0)" : String($0) }
+                let text = parts.count == 2 ? "\(duration.prefix { $0 != ":" }):\(parts[1])" : duration
+                rightItems.append(DisplayOverlay.DisplayOverlayItem(icon: nil, text: text))
             }
             return DisplayOverlay(leftItems: leftItems, rightItems: rightItems)
         }
@@ -567,7 +571,7 @@ struct SearchLiveResult: Decodable, Hashable {
             var avatar: URL? { uface?.addSchemeIfNeed() }
             var overlay: DisplayOverlay? {
                 var leftItems = [DisplayOverlay.DisplayOverlayItem]()
-                leftItems.append(DisplayOverlay.DisplayOverlayItem(icon: nil, text: cate_name))
+                leftItems.append(DisplayOverlay.DisplayOverlayItem(icon: nil, text: cate_name.removingHTMLTags()))
                 return DisplayOverlay(leftItems: leftItems)
             }
 
@@ -655,7 +659,7 @@ final class SearchTermCell: BLMotionCollectionViewCell {
             make.centerY.equalToSuperview()
         }
         rankLabel.font = .monospacedDigitSystemFont(ofSize: 30, weight: .bold)
-        rankLabel.textAlignment = .center
+        rankLabel.textAlignment = .right
         rankLabel.snp.makeConstraints { make in
             make.width.equalTo(44)
         }
